@@ -79,7 +79,7 @@ def test_processing_job_creation(session: Session) -> None:
 
 
 def test_ensure_detected_roster_creates_temporary_players(session: Session) -> None:
-    match, job = create_job(session)
+    _match, job = create_job(session)
     context = ProcessingService(session).ensure_detected_roster(
         job.id,
         DetectedRosterRequest(track_count=3),

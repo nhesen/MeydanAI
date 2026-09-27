@@ -159,7 +159,10 @@ def _report(api: WorkerApi, job_id: uuid.UUID, stage: ProcessingStage, progress:
 
 
 def _fail(api: WorkerApi, job_id: uuid.UUID, error_code: str) -> None:
-    logger.warning("local_video_job_failed", extra={"job_id": str(job_id), "error_code": error_code})
+    logger.warning(
+        "local_video_job_failed",
+        extra={"job_id": str(job_id), "error_code": error_code},
+    )
     try:
         api.update_state(
             job_id,

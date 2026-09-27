@@ -14,7 +14,13 @@ from app.core.config import Settings
 from app.core.database import Base, get_db
 from app.main import create_app
 from app.schemas.processing import WorkerAssignmentContext
-from app.worker.analyzer import MAX_PLAYER_KMH, MotionTrack, TrackSample, analyze_video, _metrics_for_track
+from app.worker.analyzer import (
+    MAX_PLAYER_KMH,
+    MotionTrack,
+    TrackSample,
+    _metrics_for_track,
+    analyze_video,
+)
 from app.worker.mapping import map_tracks_to_assignments
 from app.worker.runner import process_job
 

@@ -138,7 +138,7 @@ def _associate(
     next_track_id: int,
 ) -> tuple[dict[int, MotionTrack], list[MotionTrack], int]:
     unused = set(range(len(detections)))
-    for track_id, track in active.items():
+    for _track_id, track in active.items():
         last = track.samples[-1]
         best_index = None
         best_distance = 0.07
@@ -158,9 +158,7 @@ def _associate(
         unused.remove(best_index)
 
     retired = [track for track in active.values() if track.misses > 4]
-    remaining = {
-        track_id: track for track_id, track in active.items() if track.misses <= 4
-    }
+    remaining = {track_id: track for track_id, track in active.items() if track.misses <= 4}
     for index in unused:
         if len(remaining) >= 22:
             break
@@ -241,7 +239,7 @@ def _metrics_for_track(track: MotionTrack, width: int, height: int) -> PlayerMot
 def _step_kmh(previous: TrackSample, current: TrackSample, dt: float) -> float:
     dx = (current.x - previous.x) * PITCH_LENGTH_M
     dy = (current.y - previous.y) * PITCH_WIDTH_M
-    return (((dx * dx + dy * dy) ** 0.5) / dt) * 3.6
+    return float((((dx * dx + dy * dy) ** 0.5) / dt) * 3.6)
 
 
 def _plausible_path(samples: list[TrackSample]) -> list[TrackSample]:
