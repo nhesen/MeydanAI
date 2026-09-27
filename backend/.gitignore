@@ -1,5 +1,6 @@
 .env
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -11,3 +12,11 @@ dist/
 build/
 *.egg-info/
 var/
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.pt
+*.pth
+*.onnx
+
