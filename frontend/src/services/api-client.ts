@@ -8,6 +8,7 @@ import type {
   MatchDetail,
   MatchSummary,
   PlayerAnalyticsDetail,
+  PlayerComparison,
   ServiceHealth,
 } from "@/types/api";
 
@@ -124,6 +125,21 @@ export const api = {
   ) {
     return request<ApiResponse<PlayerAnalyticsDetail>>(
       `/api/v1/public/matches/${matchId}/players/${playerId}/analytics`,
+      { signal },
+    );
+  },
+  comparePlayers(
+    matchId: string,
+    leftPlayerId: string,
+    rightPlayerId: string,
+    signal?: AbortSignal,
+  ) {
+    const query = new URLSearchParams({
+      left_player_id: leftPlayerId,
+      right_player_id: rightPlayerId,
+    });
+    return request<ApiResponse<PlayerComparison>>(
+      `/api/v1/public/matches/${matchId}/players/compare?${query}`,
       { signal },
     );
   },

@@ -21,6 +21,7 @@ import { Card } from "@/components/ui/Card";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { MATCH_STATUS } from "@/config/match-status";
 import { MatchHeader } from "@/features/matches/components/MatchHeader";
+import { PlayerComparison } from "@/features/matches/components/PlayerComparison";
 import { PlayerRow } from "@/features/matches/components/PlayerRow";
 import { ApiError, api } from "@/services/api-client";
 import type { MatchDetail, TeamStats } from "@/types/api";
@@ -246,29 +247,38 @@ function PlayersTab({
     );
   }
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      {detail.match.teams.map((team) => {
-        const players = detail.players.filter((player) => player.team.id === team.id);
-        return (
-          <Card key={team.id}>
-            <SectionHeader
-              action={<Badge>{players.length} players</Badge>}
-              title={team.name}
-            />
-            {players.length === 0 ? (
-              <p className="mt-5 rounded-xl bg-subtle p-4 text-sm text-slate-600">
-                No players have joined this team.
-              </p>
-            ) : (
-              <div className="mt-3">
-                {players.map((player) => (
-                  <PlayerRow key={player.id} matchId={matchId} player={player} />
-                ))}
-              </div>
-            )}
-          </Card>
-        );
-      })}
+    <div>
+      <PlayerComparison matchId={matchId} players={detail.players} />
+      <div className="grid gap-5 lg:grid-cols-2">
+        {detail.match.teams.map((team) => {
+          const players = detail.players.filter(
+            (player) => player.team.id === team.id,
+          );
+          return (
+            <Card key={team.id}>
+              <SectionHeader
+                action={<Badge>{players.length} players</Badge>}
+                title={team.name}
+              />
+              {players.length === 0 ? (
+                <p className="mt-5 rounded-xl bg-subtle p-4 text-sm text-slate-600">
+                  No players have joined this team.
+                </p>
+              ) : (
+                <div className="mt-3">
+                  {players.map((player) => (
+                    <PlayerRow
+                      key={player.id}
+                      matchId={matchId}
+                      player={player}
+                    />
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }
