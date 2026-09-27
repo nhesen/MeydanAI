@@ -1,9 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 from urllib.parse import urlparse
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -69,6 +69,16 @@ class Settings(BaseSettings):
             return None
         normalized = value.strip().casefold()
         return normalized or None
+
+    @model_validator(mode="after")
+    def reject_unsafe_production_settings(self) -> Self:
+        if self.app_env != "production":
+            return self
+        if "*" in self.cors_origins:
+            raise ValueError("CORS_ALLOWED_ORIGINS cannot include a wildcard in production")
+        if not self.auth_rate_limit_enabled:
+            raise ValueError("AUTH_RATE_LIMIT_ENABLED must stay enabled in production")
+        return self
 
 
 @lru_cache

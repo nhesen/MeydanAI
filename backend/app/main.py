@@ -57,6 +57,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "status": response.status_code,
             },
         )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
     application.include_router(api_router, prefix=app_settings.api_v1_prefix)
