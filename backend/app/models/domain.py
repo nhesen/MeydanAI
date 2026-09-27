@@ -50,8 +50,20 @@ class Match(Base):
             name="ck_matches_expected_end_after_start",
         ),
         CheckConstraint(
-            "status IN ('scheduled', 'live', 'completed', 'cancelled')",
+            "status IN ('scheduled', 'live', 'processing', 'completed', 'failed', 'cancelled')",
             name="ck_matches_status",
+        ),
+        CheckConstraint(
+            "home_score IS NULL OR home_score >= 0",
+            name="ck_matches_home_score",
+        ),
+        CheckConstraint(
+            "away_score IS NULL OR away_score >= 0",
+            name="ck_matches_away_score",
+        ),
+        CheckConstraint(
+            "ended_at IS NULL OR ended_at > starts_at",
+            name="ck_matches_end_after_start",
         ),
     )
 
@@ -60,6 +72,9 @@ class Match(Base):
     venue_name: Mapped[str] = mapped_column(String(140))
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     expected_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    home_score: Mapped[int | None] = mapped_column(Integer)
+    away_score: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="scheduled", index=True)
     organizer_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

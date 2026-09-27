@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
@@ -9,7 +10,12 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base
 from app.core.exceptions import DomainError
 from app.models.domain import MatchJoinToken
-from app.schemas.matches import AssignmentCreate, JerseyChange, MatchCreate
+from app.schemas.matches import (
+    AssignmentCreate,
+    JerseyChange,
+    MatchCreate,
+    MatchStateUpdate,
+)
 from app.services.matches import MatchService, hash_token
 
 
@@ -199,3 +205,51 @@ def test_jersey_change_closes_old_assignment_and_preserves_history(
     assert len(history) == 2
     assert history[0].ended_at == effective_at
     assert history[0].jersey_number == 3
+
+
+def test_public_match_detail_preserves_relationships_and_missing_metrics(
+    session: Session,
+) -> None:
+    service = MatchService(session)
+    created = service.create_match(match_payload())
+    assignment = service.join_match(
+        created.join_token,
+        AssignmentCreate(
+            team_id=created.match.teams[0].id,
+            display_name="Detail Player",
+            jersey_number=11,
+        ),
+    )
+
+    detail = service.get_public_match_detail(created.match.id)
+
+    assert detail.match.home_score is None
+    assert detail.match.away_score is None
+    assert detail.team_stats is None
+    assert detail.highlights == []
+    assert detail.players[0].id == assignment.player.id
+    assert detail.players[0].team.id == created.match.teams[0].id
+    assert detail.players[0].rating is None
+    assert detail.players[0].jersey_history[0].jersey_number == 11
+
+
+def test_missing_public_match_detail_returns_404(session: Session) -> None:
+    with pytest.raises(DomainError) as raised:
+        MatchService(session).get_public_match_detail(uuid.uuid4())
+
+    assert raised.value.status == 404
+    assert raised.value.error_code == "MATCH_NOT_FOUND"
+
+
+def test_organizer_can_update_score_and_match_status(session: Session) -> None:
+    service = MatchService(session)
+    created = service.create_match(match_payload())
+    updated = service.update_match_state(
+        created.match.id,
+        created.organizer_token,
+        MatchStateUpdate(status="live", home_score=2, away_score=1),
+    )
+
+    assert updated.status == "live"
+    assert updated.home_score == 2
+    assert updated.away_score == 1

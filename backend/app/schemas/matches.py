@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -67,8 +68,82 @@ class MatchResponse(BaseModel):
     venue_name: str
     starts_at: datetime
     expected_ends_at: datetime | None
+    ended_at: datetime | None
+    home_score: int | None
+    away_score: int | None
     status: str
     teams: list[TeamResponse]
+
+
+class MatchStateUpdate(BaseModel):
+    status: Literal["scheduled", "live", "processing", "completed", "failed", "cancelled"]
+    home_score: int | None = Field(default=None, ge=0)
+    away_score: int | None = Field(default=None, ge=0)
+    ended_at: datetime | None = None
+
+
+class JerseyHistoryResponse(BaseModel):
+    assignment_id: uuid.UUID
+    jersey_number: int
+    started_at: datetime
+    ended_at: datetime | None
+
+
+class MatchPlayerResponse(BaseModel):
+    id: uuid.UUID
+    display_name: str
+    team: TeamResponse
+    current_jersey: int | None
+    jersey_history: list[JerseyHistoryResponse]
+    rating: float | None = None
+    distance_m: float | None = None
+    sprint_count: int | None = None
+
+
+class TeamStatsResponse(BaseModel):
+    team_id: uuid.UUID
+    total_distance_m: float | None = None
+    average_speed_kmh: float | None = None
+    maximum_speed_kmh: float | None = None
+    sprint_count: int | None = None
+    active_time_seconds: int | None = None
+
+
+class TimelineEventResponse(BaseModel):
+    id: str
+    event_type: Literal[
+        "goal",
+        "substitution",
+        "jersey_change",
+        "high_intensity",
+        "ai_moment",
+        "custom",
+    ]
+    occurred_at: datetime
+    minute: int | None
+    title: str
+    description: str | None
+    player_id: uuid.UUID | None
+    team_id: uuid.UUID | None
+
+
+class HighlightResponse(BaseModel):
+    id: uuid.UUID
+    highlight_type: str
+    title: str
+    video_url: str | None
+    thumbnail_url: str | None
+    duration_seconds: int | None
+    occurred_at: datetime | None
+    player_id: uuid.UUID | None
+
+
+class MatchDetailResponse(BaseModel):
+    match: MatchResponse
+    players: list[MatchPlayerResponse]
+    team_stats: list[TeamStatsResponse] | None
+    events: list[TimelineEventResponse]
+    highlights: list[HighlightResponse]
 
 
 class MatchCreatedResponse(BaseModel):

@@ -15,12 +15,17 @@ from app.schemas.matches import (
     AssignmentCreate,
     AssignmentResponse,
     JerseyChange,
+    JerseyHistoryResponse,
     JoinContextResponse,
     MatchCreate,
     MatchCreatedResponse,
+    MatchDetailResponse,
+    MatchPlayerResponse,
     MatchResponse,
+    MatchStateUpdate,
     PlayerResponse,
     TeamResponse,
+    TimelineEventResponse,
 )
 
 
@@ -79,6 +84,105 @@ class MatchService:
         match = self._require_match(match_id)
         self._validate_organizer(match, organizer_token)
         return match
+
+    def get_public_match_detail(self, match_id: uuid.UUID) -> MatchDetailResponse:
+        match = self._require_match(match_id)
+        assignments = self.repository.list_assignments(match_id)
+        players: dict[uuid.UUID, MatchPlayerResponse] = {}
+        assignment_by_id = {assignment.id: assignment for assignment in assignments}
+        events: list[TimelineEventResponse] = []
+
+        for assignment in assignments:
+            history_item = JerseyHistoryResponse(
+                assignment_id=assignment.id,
+                jersey_number=assignment.jersey_number,
+                started_at=aware(assignment.started_at),
+                ended_at=aware(assignment.ended_at) if assignment.ended_at else None,
+            )
+            existing = players.get(assignment.player_id)
+            if existing is None:
+                existing = MatchPlayerResponse(
+                    id=assignment.player.id,
+                    display_name=assignment.player.display_name,
+                    team=TeamResponse(
+                        id=assignment.team.id,
+                        name=assignment.team.name,
+                    ),
+                    current_jersey=None,
+                    jersey_history=[],
+                )
+                players[assignment.player_id] = existing
+            existing.jersey_history.append(history_item)
+            if assignment.ended_at is None:
+                existing.current_jersey = assignment.jersey_number
+
+            if assignment.supersedes_id is not None:
+                previous = assignment_by_id.get(assignment.supersedes_id)
+                previous_number = previous.jersey_number if previous else None
+                minute = max(
+                    0,
+                    int(
+                        (aware(assignment.started_at) - aware(match.starts_at)).total_seconds()
+                        // 60
+                    ),
+                )
+                events.append(
+                    TimelineEventResponse(
+                        id=f"jersey-{assignment.id}",
+                        event_type="jersey_change",
+                        occurred_at=aware(assignment.started_at),
+                        minute=minute,
+                        title="Jersey changed",
+                        description=(
+                            f"{assignment.player.display_name}: "
+                            f"#{previous_number} to #{assignment.jersey_number}"
+                            if previous_number is not None
+                            else f"{assignment.player.display_name}: #{assignment.jersey_number}"
+                        ),
+                        player_id=assignment.player_id,
+                        team_id=assignment.team_id,
+                    )
+                )
+
+        for player in players.values():
+            player.jersey_history.sort(key=lambda item: item.started_at)
+            if player.current_jersey is None and player.jersey_history:
+                player.current_jersey = player.jersey_history[-1].jersey_number
+
+        return MatchDetailResponse(
+            match=self.to_match_response(match),
+            players=sorted(players.values(), key=lambda item: item.display_name.casefold()),
+            team_stats=None,
+            events=sorted(events, key=lambda item: item.occurred_at),
+            highlights=[],
+        )
+
+    def update_match_state(
+        self,
+        match_id: uuid.UUID,
+        organizer_token: str,
+        payload: MatchStateUpdate,
+    ) -> MatchResponse:
+        match = self.get_organizer_match(match_id, organizer_token)
+        match.status = payload.status
+        match.home_score = payload.home_score
+        match.away_score = payload.away_score
+        match.ended_at = (
+            payload.ended_at
+            if payload.ended_at is not None
+            else datetime.now(UTC)
+            if payload.status == "completed"
+            else None
+        )
+        if match.ended_at is not None and aware(match.ended_at) <= aware(match.starts_at):
+            raise DomainError(
+                status=422,
+                title="Invalid match time",
+                detail="Match end time must be after the start time.",
+                error_code="INVALID_MATCH_END_TIME",
+            )
+        self.session.commit()
+        return self.to_match_response(self._require_match(match.id))
 
     def rotate_join_token(
         self,
@@ -233,7 +337,7 @@ class MatchService:
             raise self._gone("This join link has been revoked.", "JOIN_TOKEN_REVOKED")
         if record.expires_at is not None and aware(record.expires_at) <= now:
             raise self._gone("This join link has expired.", "JOIN_TOKEN_EXPIRED")
-        if record.match.status in {"completed", "cancelled"}:
+        if record.match.status in {"processing", "completed", "failed", "cancelled"}:
             raise self._gone("This match is no longer open.", "MATCH_CLOSED")
         return record
 
@@ -325,6 +429,9 @@ class MatchService:
             expected_ends_at=(
                 aware(match.expected_ends_at) if match.expected_ends_at is not None else None
             ),
+            ended_at=aware(match.ended_at) if match.ended_at is not None else None,
+            home_score=match.home_score,
+            away_score=match.away_score,
             status=match.status,
             teams=[
                 TeamResponse(id=item.team.id, name=item.team.name, side=item.side)

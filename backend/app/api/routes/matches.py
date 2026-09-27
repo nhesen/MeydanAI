@@ -15,6 +15,7 @@ from app.schemas.matches import (
     MatchCreate,
     MatchCreatedResponse,
     MatchResponse,
+    MatchStateUpdate,
 )
 from app.services.matches import MatchService
 
@@ -43,6 +44,18 @@ def get_match(
     service = MatchService(session)
     match = service.get_organizer_match(match_id, organizer_token)
     return ApiResponse(data=service.to_match_response(match))
+
+
+@router.patch("/{match_id}", response_model=ApiResponse[MatchResponse])
+def update_match_state(
+    match_id: uuid.UUID,
+    payload: MatchStateUpdate,
+    session: DatabaseSession,
+    organizer_token: OrganizerToken,
+) -> ApiResponse[MatchResponse]:
+    return ApiResponse(
+        data=MatchService(session).update_match_state(match_id, organizer_token, payload)
+    )
 
 
 @router.post(
