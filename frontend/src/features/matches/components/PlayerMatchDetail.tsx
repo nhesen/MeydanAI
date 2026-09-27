@@ -12,7 +12,10 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { MATCH_STATUS } from "@/config/match-status";
+import { PlayerHeatmap } from "@/features/matches/components/PlayerHeatmap";
+import { PlayerIntensityChart } from "@/features/matches/components/PlayerIntensityChart";
 import { PlayerKpiGrid } from "@/features/matches/components/PlayerKpiGrid";
+import { PlayerPerformanceTimeline } from "@/features/matches/components/PlayerPerformanceTimeline";
 import {
   formatMatchDate,
   formatTimestamp,
@@ -164,6 +167,41 @@ export function PlayerMatchDetail({
         <PlayerKpiGrid player={player} />
       </div>
 
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <Card>
+          <h2 className="type-section-title text-slate-950">Position heatmap</h2>
+          <p className="mb-4 mt-1 text-sm text-slate-500">
+            Density from normalized player position samples.
+          </p>
+          <PlayerHeatmap
+            processing={player.analytics_status === "processing"}
+            samples={detail.position_samples}
+          />
+        </Card>
+        <Card>
+          <h2 className="type-section-title text-slate-950">
+            Intensity by minute
+          </h2>
+          <p className="mb-4 mt-1 text-sm text-slate-500">
+            Pipeline-provided activity intensity on a 0–100 scale.
+          </p>
+          <PlayerIntensityChart
+            buckets={detail.intensity_buckets}
+            processing={player.analytics_status === "processing"}
+          />
+        </Card>
+      </div>
+
+      <Card className="mt-5">
+        <h2 className="type-section-title text-slate-950">
+          Performance timeline
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Verified sprint, speed, intensity and jersey-change moments.
+        </p>
+        <PlayerPerformanceTimeline detail={detail} />
+      </Card>
+
       <Card className="mt-5">
         <h2 className="type-section-title text-slate-950">Jersey history</h2>
         <p className="mt-1 text-sm text-slate-500">
@@ -222,6 +260,14 @@ function PlayerDetailSkeleton() {
       <Card className="mt-5">
         <LoadingSkeleton lines={4} label="Loading player analytics" />
       </Card>
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <Card>
+          <div className="aspect-[100/64] animate-pulse rounded-xl bg-subtle" />
+        </Card>
+        <Card>
+          <div className="h-52 animate-pulse rounded-xl bg-subtle" />
+        </Card>
+      </div>
     </PageContainer>
   );
 }
