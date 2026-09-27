@@ -5,6 +5,7 @@ from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.domain import (
+    Highlight,
     JerseyAssignment,
     Match,
     MatchJoinToken,
@@ -100,6 +101,15 @@ class MatchRepository:
                 selectinload(PlayerMatchAnalytics.position_samples),
                 selectinload(PlayerMatchAnalytics.intensity_buckets),
                 selectinload(PlayerMatchAnalytics.events),
+            )
+        )
+
+    def list_highlights(self, match_id: uuid.UUID) -> list[Highlight]:
+        return list(
+            self.session.scalars(
+                select(Highlight)
+                .where(Highlight.match_id == match_id)
+                .order_by(Highlight.timestamp_ms, Highlight.created_at)
             )
         )
 

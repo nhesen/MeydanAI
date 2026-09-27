@@ -109,6 +109,41 @@ class MatchTeam(Base):
     team: Mapped[Team] = relationship()
 
 
+class Highlight(Base):
+    __tablename__ = "highlights"
+    __table_args__ = (
+        CheckConstraint(
+            "highlight_type IN ('goal', 'top_run', 'sprint', 'key_moment', "
+            "'manual', 'ai_detected')",
+            name="ck_highlights_type",
+        ),
+        CheckConstraint("timestamp_ms >= 0", name="ck_highlights_timestamp"),
+        CheckConstraint(
+            "duration_ms IS NULL OR duration_ms > 0",
+            name="ck_highlights_duration",
+        ),
+        Index("ix_highlights_match_created", "match_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    match_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("matches.id", ondelete="CASCADE"), index=True
+    )
+    player_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("players.id", ondelete="SET NULL"), index=True
+    )
+    highlight_type: Mapped[str] = mapped_column(String(30), index=True)
+    timestamp_ms: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(140))
+    video_url: Mapped[str | None] = mapped_column(String(1000))
+    thumbnail_url: Mapped[str | None] = mapped_column(String(1000))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    match: Mapped[Match] = relationship()
+    player: Mapped[Player | None] = relationship()
+
+
 class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
     __table_args__ = (

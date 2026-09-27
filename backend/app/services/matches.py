@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
 from sqlalchemy import update
@@ -24,6 +24,7 @@ from app.schemas.matches import (
     AssignmentCorrection,
     AssignmentCreate,
     AssignmentResponse,
+    HighlightResponse,
     IntensityBucketResponse,
     JerseyChange,
     JerseyHistoryResponse,
@@ -178,7 +179,22 @@ class MatchService:
             players=sorted(players.values(), key=lambda item: item.display_name.casefold()),
             team_stats=None,
             events=sorted(events, key=lambda item: item.occurred_at),
-            highlights=[],
+            highlights=[
+                HighlightResponse(
+                    id=highlight.id,
+                    highlight_type=highlight.highlight_type,
+                    title=highlight.title,
+                    video_url=highlight.video_url,
+                    thumbnail_url=highlight.thumbnail_url,
+                    duration_seconds=(
+                        highlight.duration_ms // 1000 if highlight.duration_ms is not None else None
+                    ),
+                    occurred_at=aware(match.starts_at)
+                    + timedelta(milliseconds=highlight.timestamp_ms),
+                    player_id=highlight.player_id,
+                )
+                for highlight in self.repository.list_highlights(match_id)
+            ],
         )
 
     def get_player_analytics_detail(
