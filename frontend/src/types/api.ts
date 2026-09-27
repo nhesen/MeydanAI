@@ -177,6 +177,125 @@ export interface ProcessingJob {
   error_message: string | null;
 }
 
+export interface PageResponse<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
+export interface MatchListItem {
+  match: MatchSummary;
+  has_analytics: boolean;
+}
+
+export interface PlayerPerformanceSummary {
+  match_id: string;
+  match_title: string | null;
+  venue_name: string;
+  starts_at: string;
+  team: MatchTeam;
+  rating: number | null;
+  distance_m: number | null;
+  avg_speed_kmh: number | null;
+  max_speed_kmh: number | null;
+  sprint_count: number | null;
+  active_seconds: number | null;
+}
+
+export interface PlayerDirectoryItem {
+  id: string;
+  display_name: string;
+  is_temporary: boolean;
+  recent_performance: PlayerPerformanceSummary | null;
+}
+
+export interface GlobalPlayerProfile {
+  id: string;
+  display_name: string;
+  is_temporary: boolean;
+  recent_performances: PlayerPerformanceSummary[];
+}
+
+export interface TeamDirectoryItem {
+  id: string;
+  name: string;
+  player_count: number;
+  match_count: number;
+}
+
+export interface TeamDetail {
+  team: TeamDirectoryItem;
+  players: PlayerDirectoryItem[];
+  recent_matches: MatchListItem[];
+}
+
+export type HighlightType =
+  | "goal"
+  | "top_run"
+  | "sprint"
+  | "key_moment"
+  | "manual"
+  | "ai_detected";
+
+export interface PlatformHighlight {
+  id: string;
+  match_id: string;
+  match_title: string | null;
+  player_id: string | null;
+  player_name: string | null;
+  highlight_type: HighlightType;
+  timestamp_ms: number;
+  title: string;
+  video_url: string | null;
+  thumbnail_url: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface LeaderboardEntry {
+  player_id: string;
+  display_name: string;
+  match_count: number;
+  value: number;
+}
+
+export interface TeamAnalyticsSummary {
+  team_id: string;
+  team_name: string;
+  match_count: number;
+  total_distance_m: number | null;
+  average_speed_kmh: number | null;
+  maximum_speed_kmh: number | null;
+  sprint_count: number | null;
+}
+
+export interface AnalyticsLeaderboards {
+  rating_leaders: LeaderboardEntry[];
+  distance_leaders: LeaderboardEntry[];
+  speed_leaders: LeaderboardEntry[];
+  sprint_leaders: LeaderboardEntry[];
+  team_analytics: TeamAnalyticsSummary[];
+  date_from: string | null;
+  date_to: string | null;
+}
+
+export interface DashboardData {
+  quick_stats: {
+    total_matches: number;
+    completed_matches: number;
+    total_players: number;
+    total_teams: number;
+    processed_matches: number;
+  };
+  recent_matches: MatchListItem[];
+  upcoming_matches: MatchListItem[];
+  processing_matches: MatchListItem[];
+  top_players: LeaderboardEntry[];
+  latest_highlights: PlatformHighlight[];
+}
+
 export interface TeamStats {
   team_id: string;
   total_distance_m: number | null;
