@@ -33,6 +33,15 @@ class ProcessingJobStateUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_state_details(self) -> "ProcessingJobStateUpdate":
+        if self.status == ProcessingStatus.QUEUED and (
+            self.stage != ProcessingStage.QUEUED or self.progress not in {None, 0}
+        ):
+            raise ValueError("Queued jobs require queued stage and zero progress")
+        if self.status == ProcessingStatus.PROCESSING and (
+            self.stage in {ProcessingStage.QUEUED, ProcessingStage.COMPLETED}
+            or self.progress == 100
+        ):
+            raise ValueError("Processing jobs require an active stage and progress below 100")
         if self.status == ProcessingStatus.COMPLETED and (
             self.stage != ProcessingStage.COMPLETED or self.progress != 100
         ):

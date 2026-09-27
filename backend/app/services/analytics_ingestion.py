@@ -46,7 +46,7 @@ class AnalyticsIngestionService:
             raise DomainError(
                 status=413,
                 title="Analytics batch is too large",
-                detail="Split position samples into a smaller player result batch.",
+                detail="Reduce or downsample this player result to the configured batch limit.",
                 error_code="ANALYTICS_BATCH_TOO_LARGE",
             )
         payload_hash = self._payload_hash(payload)

@@ -153,7 +153,7 @@ def test_failed_job_retry_and_completed_retry_rejection(session: Session) -> Non
             progress=20,
         ),
     )
-    service.update_state(
+    failed = service.update_state(
         failed_job.id,
         ProcessingJobStateUpdate(
             status=ProcessingStatus.FAILED,
@@ -163,6 +163,8 @@ def test_failed_job_retry_and_completed_retry_rejection(session: Session) -> Non
             error_message="Internal provider stack trace",
         ),
     )
+    assert failed.error_message == "Video processing could not be completed."
+    assert "stack trace" not in (failed.error_message or "")
     retry = service.retry_job(failed_job.id, match.organizer_token)
     assert retry.retry_of_id == failed_job.id
     assert retry.status == ProcessingStatus.QUEUED
@@ -195,6 +197,12 @@ def test_processing_progress_validation() -> None:
             status=ProcessingStatus.PROCESSING,
             stage=ProcessingStage.TRACKING_PLAYERS,
             progress=101,
+        )
+    with pytest.raises(ValidationError):
+        ProcessingJobStateUpdate(
+            status=ProcessingStatus.PROCESSING,
+            stage=ProcessingStage.COMPLETED,
+            progress=100,
         )
 
 
