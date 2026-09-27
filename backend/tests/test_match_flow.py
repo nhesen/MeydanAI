@@ -3,18 +3,27 @@ from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
 from app.core.exceptions import DomainError
-from app.models.domain import MatchJoinToken
+from app.models.domain import (
+    MatchJoinToken,
+    PlayerAnalyticsEvent,
+    PlayerIntensityBucket,
+    PlayerMatchAnalytics,
+    PlayerPositionSample,
+)
 from app.schemas.matches import (
     AssignmentCreate,
+    IntensityBucketResponse,
     JerseyChange,
     MatchCreate,
     MatchStateUpdate,
+    PositionSampleResponse,
 )
 from app.services.matches import MatchService, hash_token
 
@@ -253,3 +262,196 @@ def test_organizer_can_update_score_and_match_status(session: Session) -> None:
     assert updated.status == "live"
     assert updated.home_score == 2
     assert updated.away_score == 1
+
+
+def test_player_analytics_detail_returns_persisted_data(session: Session) -> None:
+    service = MatchService(session)
+    created = service.create_match(match_payload())
+    assignment = service.join_match(
+        created.join_token,
+        AssignmentCreate(
+            team_id=created.match.teams[0].id,
+            display_name="Analytics Player",
+            jersey_number=10,
+        ),
+    )
+    analytics = PlayerMatchAnalytics(
+        match_id=created.match.id,
+        player_id=assignment.player.id,
+        team_id=assignment.team.id,
+        status="available",
+        rating=8.4,
+        distance_m=4820,
+        avg_speed_kmh=11.9,
+        max_speed_kmh=27.6,
+        sprint_count=14,
+        active_seconds=3136,
+        activity_count=92,
+        peak_speed_at_ms=2052000,
+    )
+    analytics.position_samples = [PlayerPositionSample(timestamp_ms=1000, x=0.42, y=0.68)]
+    analytics.intensity_buckets = [PlayerIntensityBucket(from_minute=0, to_minute=5, intensity=42)]
+    analytics.events = [
+        PlayerAnalyticsEvent(
+            event_type="sprint",
+            timestamp_ms=752000,
+            speed_kmh=24.8,
+            title="Sprint",
+        )
+    ]
+    session.add(analytics)
+    session.commit()
+
+    detail = service.get_player_analytics_detail(
+        created.match.id,
+        assignment.player.id,
+    )
+
+    assert detail.player.analytics_status == "available"
+    assert detail.player.rating == 8.4
+    assert detail.player.distance_m == 4820
+    assert detail.position_samples[0].x == 0.42
+    assert detail.intensity_buckets[0].to_minute == 5
+    assert detail.events[0].speed_kmh == 24.8
+
+
+def test_player_analytics_rejects_player_not_in_match(session: Session) -> None:
+    service = MatchService(session)
+    first = service.create_match(match_payload("first"))
+    second = service.create_match(match_payload("second"))
+    outsider = service.join_match(
+        second.join_token,
+        AssignmentCreate(
+            team_id=second.match.teams[0].id,
+            display_name="Other Match Player",
+            jersey_number=4,
+        ),
+    )
+
+    with pytest.raises(DomainError) as raised:
+        service.get_player_analytics_detail(first.match.id, outsider.player.id)
+
+    assert raised.value.error_code == "PLAYER_NOT_IN_MATCH"
+
+
+def test_player_analytics_preserves_null_metrics_and_empty_samples(
+    session: Session,
+) -> None:
+    service = MatchService(session)
+    created = service.create_match(match_payload())
+    assignment = service.join_match(
+        created.join_token,
+        AssignmentCreate(
+            team_id=created.match.teams[0].id,
+            display_name="Nullable Player",
+            jersey_number=2,
+        ),
+    )
+    session.add(
+        PlayerMatchAnalytics(
+            match_id=created.match.id,
+            player_id=assignment.player.id,
+            team_id=assignment.team.id,
+            status="unavailable",
+        )
+    )
+    session.commit()
+
+    detail = service.get_player_analytics_detail(
+        created.match.id,
+        assignment.player.id,
+    )
+
+    assert detail.player.distance_m is None
+    assert detail.player.sprint_count is None
+    assert detail.position_samples == []
+    assert detail.intensity_buckets == []
+
+
+def test_position_and_intensity_contract_validation() -> None:
+    with pytest.raises(ValidationError):
+        PositionSampleResponse(timestamp_ms=10, x=1.1, y=0.5)
+    with pytest.raises(ValidationError):
+        PositionSampleResponse(timestamp_ms=10, x=0.5, y=-0.1)
+    with pytest.raises(ValidationError):
+        IntensityBucketResponse(from_minute=5, to_minute=5, intensity=42)
+    with pytest.raises(ValidationError):
+        IntensityBucketResponse(from_minute=0, to_minute=5, intensity=101)
+
+
+def test_player_analytics_keeps_jersey_history(session: Session) -> None:
+    service = MatchService(session)
+    created = service.create_match(match_payload())
+    original = service.join_match(
+        created.join_token,
+        AssignmentCreate(
+            team_id=created.match.teams[0].id,
+            display_name="Changing Player",
+            jersey_number=3,
+        ),
+    )
+    service.change_jersey(
+        created.match.id,
+        original.id,
+        created.organizer_token,
+        JerseyChange(
+            jersey_number=8,
+            effective_at=original.started_at + timedelta(minutes=10),
+        ),
+    )
+
+    detail = service.get_player_analytics_detail(
+        created.match.id,
+        original.player.id,
+    )
+
+    assert detail.player.current_jersey == 8
+    assert [item.jersey_number for item in detail.player.jersey_history] == [3, 8]
+
+
+def test_player_comparison_requires_two_players_from_same_match(
+    session: Session,
+) -> None:
+    service = MatchService(session)
+    first = service.create_match(match_payload("first"))
+    second = service.create_match(match_payload("second"))
+    left = service.join_match(
+        first.join_token,
+        AssignmentCreate(
+            team_id=first.match.teams[0].id,
+            display_name="Left Player",
+            jersey_number=5,
+        ),
+    )
+    right = service.join_match(
+        first.join_token,
+        AssignmentCreate(
+            team_id=first.match.teams[1].id,
+            display_name="Right Player",
+            jersey_number=6,
+        ),
+    )
+    outsider = service.join_match(
+        second.join_token,
+        AssignmentCreate(
+            team_id=second.match.teams[0].id,
+            display_name="Outsider",
+            jersey_number=7,
+        ),
+    )
+
+    comparison = service.compare_players(
+        first.match.id,
+        left.player.id,
+        right.player.id,
+    )
+    assert comparison.left.id == left.player.id
+    assert comparison.right.id == right.player.id
+
+    with pytest.raises(DomainError) as raised:
+        service.compare_players(
+            first.match.id,
+            left.player.id,
+            outsider.player.id,
+        )
+    assert raised.value.error_code == "COMPARISON_PLAYER_NOT_IN_MATCH"

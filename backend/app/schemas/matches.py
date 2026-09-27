@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+AnalyticsStatus = Literal["processing", "available", "unavailable", "failed"]
+
 
 class MatchCreate(BaseModel):
     venue_name: str = Field(min_length=2, max_length=140)
@@ -97,7 +99,52 @@ class MatchPlayerResponse(BaseModel):
     jersey_history: list[JerseyHistoryResponse]
     rating: float | None = None
     distance_m: float | None = None
+    avg_speed_kmh: float | None = None
+    max_speed_kmh: float | None = None
     sprint_count: int | None = None
+    active_seconds: int | None = None
+    activity_count: int | None = None
+    peak_speed_at_ms: int | None = None
+    analytics_status: AnalyticsStatus = "unavailable"
+
+
+class PositionSampleResponse(BaseModel):
+    timestamp_ms: int = Field(ge=0)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+
+
+class IntensityBucketResponse(BaseModel):
+    from_minute: int = Field(ge=0)
+    to_minute: int = Field(gt=0)
+    intensity: float = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> "IntensityBucketResponse":
+        if self.to_minute <= self.from_minute:
+            raise ValueError("to_minute must be after from_minute")
+        return self
+
+
+class PlayerAnalyticsEventResponse(BaseModel):
+    id: uuid.UUID
+    event_type: Literal["sprint", "peak_speed", "high_intensity_period", "custom"]
+    timestamp_ms: int = Field(ge=0)
+    speed_kmh: float | None = Field(default=None, ge=0)
+    title: str
+
+
+class PlayerAnalyticsDetailResponse(BaseModel):
+    match: MatchResponse
+    player: MatchPlayerResponse
+    position_samples: list[PositionSampleResponse]
+    intensity_buckets: list[IntensityBucketResponse]
+    events: list[PlayerAnalyticsEventResponse]
+
+
+class PlayerComparisonResponse(BaseModel):
+    left: MatchPlayerResponse
+    right: MatchPlayerResponse
 
 
 class TeamStatsResponse(BaseModel):

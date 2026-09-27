@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -182,3 +183,177 @@ class JerseyAssignment(Base):
 
     player: Mapped[Player] = relationship()
     team: Mapped[Team] = relationship()
+
+
+class PlayerMatchAnalytics(Base):
+    __tablename__ = "player_match_analytics"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["match_id", "team_id"],
+            ["match_teams.match_id", "match_teams.team_id"],
+            ondelete="CASCADE",
+            name="fk_player_analytics_match_team",
+        ),
+        UniqueConstraint(
+            "match_id",
+            "player_id",
+            name="uq_player_analytics_match_player",
+        ),
+        CheckConstraint(
+            "status IN ('processing', 'available', 'unavailable', 'failed')",
+            name="ck_player_analytics_status",
+        ),
+        CheckConstraint(
+            "rating IS NULL OR (rating >= 0 AND rating <= 10)",
+            name="ck_player_analytics_rating",
+        ),
+        CheckConstraint(
+            "distance_m IS NULL OR distance_m >= 0",
+            name="ck_player_analytics_distance",
+        ),
+        CheckConstraint(
+            "avg_speed_kmh IS NULL OR avg_speed_kmh >= 0",
+            name="ck_player_analytics_avg_speed",
+        ),
+        CheckConstraint(
+            "max_speed_kmh IS NULL OR max_speed_kmh >= 0",
+            name="ck_player_analytics_max_speed",
+        ),
+        CheckConstraint(
+            "sprint_count IS NULL OR sprint_count >= 0",
+            name="ck_player_analytics_sprints",
+        ),
+        CheckConstraint(
+            "active_seconds IS NULL OR active_seconds >= 0",
+            name="ck_player_analytics_active_seconds",
+        ),
+        CheckConstraint(
+            "activity_count IS NULL OR activity_count >= 0",
+            name="ck_player_analytics_activity_count",
+        ),
+        CheckConstraint(
+            "peak_speed_at_ms IS NULL OR peak_speed_at_ms >= 0",
+            name="ck_player_analytics_peak_speed_time",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    match_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("matches.id", ondelete="CASCADE"), index=True
+    )
+    player_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), index=True
+    )
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("teams.id", ondelete="RESTRICT"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="unavailable")
+    rating: Mapped[float | None] = mapped_column(Float)
+    distance_m: Mapped[float | None] = mapped_column(Float)
+    avg_speed_kmh: Mapped[float | None] = mapped_column(Float)
+    max_speed_kmh: Mapped[float | None] = mapped_column(Float)
+    sprint_count: Mapped[int | None] = mapped_column(Integer)
+    active_seconds: Mapped[int | None] = mapped_column(Integer)
+    activity_count: Mapped[int | None] = mapped_column(Integer)
+    peak_speed_at_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    player: Mapped[Player] = relationship()
+    team: Mapped[Team] = relationship()
+    position_samples: Mapped[list["PlayerPositionSample"]] = relationship(
+        back_populates="analytics",
+        cascade="all, delete-orphan",
+        order_by="PlayerPositionSample.timestamp_ms",
+    )
+    intensity_buckets: Mapped[list["PlayerIntensityBucket"]] = relationship(
+        back_populates="analytics",
+        cascade="all, delete-orphan",
+        order_by="PlayerIntensityBucket.from_minute",
+    )
+    events: Mapped[list["PlayerAnalyticsEvent"]] = relationship(
+        back_populates="analytics",
+        cascade="all, delete-orphan",
+        order_by="PlayerAnalyticsEvent.timestamp_ms",
+    )
+
+
+class PlayerPositionSample(Base):
+    __tablename__ = "player_position_samples"
+    __table_args__ = (
+        CheckConstraint("timestamp_ms >= 0", name="ck_position_samples_time"),
+        CheckConstraint("x >= 0 AND x <= 1", name="ck_position_samples_x"),
+        CheckConstraint("y >= 0 AND y <= 1", name="ck_position_samples_y"),
+        Index(
+            "ix_position_samples_analytics_time",
+            "analytics_id",
+            "timestamp_ms",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    analytics_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("player_match_analytics.id", ondelete="CASCADE")
+    )
+    timestamp_ms: Mapped[int] = mapped_column(Integer)
+    x: Mapped[float] = mapped_column(Float)
+    y: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    analytics: Mapped[PlayerMatchAnalytics] = relationship(back_populates="position_samples")
+
+
+class PlayerIntensityBucket(Base):
+    __tablename__ = "player_intensity_buckets"
+    __table_args__ = (
+        CheckConstraint("from_minute >= 0", name="ck_intensity_from_minute"),
+        CheckConstraint("to_minute > from_minute", name="ck_intensity_valid_interval"),
+        CheckConstraint(
+            "intensity >= 0 AND intensity <= 100",
+            name="ck_intensity_range",
+        ),
+        UniqueConstraint(
+            "analytics_id",
+            "from_minute",
+            "to_minute",
+            name="uq_intensity_analytics_interval",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    analytics_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("player_match_analytics.id", ondelete="CASCADE"), index=True
+    )
+    from_minute: Mapped[int] = mapped_column(Integer)
+    to_minute: Mapped[int] = mapped_column(Integer)
+    intensity: Mapped[float] = mapped_column(Float)
+
+    analytics: Mapped[PlayerMatchAnalytics] = relationship(back_populates="intensity_buckets")
+
+
+class PlayerAnalyticsEvent(Base):
+    __tablename__ = "player_analytics_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('sprint', 'peak_speed', 'high_intensity_period', 'custom')",
+            name="ck_player_analytics_event_type",
+        ),
+        CheckConstraint("timestamp_ms >= 0", name="ck_player_analytics_event_time"),
+        CheckConstraint(
+            "speed_kmh IS NULL OR speed_kmh >= 0",
+            name="ck_player_analytics_event_speed",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    analytics_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("player_match_analytics.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(32))
+    timestamp_ms: Mapped[int] = mapped_column(Integer)
+    speed_kmh: Mapped[float | None] = mapped_column(Float)
+    title: Mapped[str] = mapped_column(String(140))
+
+    analytics: Mapped[PlayerMatchAnalytics] = relationship(back_populates="events")

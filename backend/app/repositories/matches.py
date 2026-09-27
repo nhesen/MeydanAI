@@ -4,7 +4,14 @@ from datetime import datetime
 from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models.domain import JerseyAssignment, Match, MatchJoinToken, MatchTeam, Player
+from app.models.domain import (
+    JerseyAssignment,
+    Match,
+    MatchJoinToken,
+    MatchTeam,
+    Player,
+    PlayerMatchAnalytics,
+)
 
 
 class MatchRepository:
@@ -66,6 +73,33 @@ class MatchRepository:
                     joinedload(JerseyAssignment.team),
                 )
                 .order_by(JerseyAssignment.started_at, JerseyAssignment.created_at)
+            )
+        )
+
+    def list_player_analytics(self, match_id: uuid.UUID) -> list[PlayerMatchAnalytics]:
+        return list(
+            self.session.scalars(
+                select(PlayerMatchAnalytics).where(PlayerMatchAnalytics.match_id == match_id)
+            )
+        )
+
+    def get_player_analytics(
+        self,
+        match_id: uuid.UUID,
+        player_id: uuid.UUID,
+    ) -> PlayerMatchAnalytics | None:
+        return self.session.scalar(
+            select(PlayerMatchAnalytics)
+            .where(
+                PlayerMatchAnalytics.match_id == match_id,
+                PlayerMatchAnalytics.player_id == player_id,
+            )
+            .options(
+                joinedload(PlayerMatchAnalytics.player),
+                joinedload(PlayerMatchAnalytics.team),
+                selectinload(PlayerMatchAnalytics.position_samples),
+                selectinload(PlayerMatchAnalytics.intensity_buckets),
+                selectinload(PlayerMatchAnalytics.events),
             )
         )
 

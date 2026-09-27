@@ -2,18 +2,29 @@ import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime
+from typing import Literal, cast
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import DomainError
-from app.models.domain import JerseyAssignment, Match, MatchJoinToken, MatchTeam, Player, Team
+from app.models.domain import (
+    JerseyAssignment,
+    Match,
+    MatchJoinToken,
+    MatchTeam,
+    Player,
+    PlayerMatchAnalytics,
+    Team,
+)
 from app.repositories.matches import MatchRepository
 from app.schemas.matches import (
+    AnalyticsStatus,
     AssignmentCorrection,
     AssignmentCreate,
     AssignmentResponse,
+    IntensityBucketResponse,
     JerseyChange,
     JerseyHistoryResponse,
     JoinContextResponse,
@@ -23,7 +34,11 @@ from app.schemas.matches import (
     MatchPlayerResponse,
     MatchResponse,
     MatchStateUpdate,
+    PlayerAnalyticsDetailResponse,
+    PlayerAnalyticsEventResponse,
+    PlayerComparisonResponse,
     PlayerResponse,
+    PositionSampleResponse,
     TeamResponse,
     TimelineEventResponse,
 )
@@ -88,6 +103,10 @@ class MatchService:
     def get_public_match_detail(self, match_id: uuid.UUID) -> MatchDetailResponse:
         match = self._require_match(match_id)
         assignments = self.repository.list_assignments(match_id)
+        analytics_by_player = {
+            analytics.player_id: analytics
+            for analytics in self.repository.list_player_analytics(match_id)
+        }
         players: dict[uuid.UUID, MatchPlayerResponse] = {}
         assignment_by_id = {assignment.id: assignment for assignment in assignments}
         events: list[TimelineEventResponse] = []
@@ -148,6 +167,11 @@ class MatchService:
             player.jersey_history.sort(key=lambda item: item.started_at)
             if player.current_jersey is None and player.jersey_history:
                 player.current_jersey = player.jersey_history[-1].jersey_number
+            analytics = analytics_by_player.get(player.id)
+            if analytics is not None and analytics.team_id == player.team.id:
+                self._apply_analytics(player, analytics)
+            elif match.status == "processing":
+                player.analytics_status = "processing"
 
         return MatchDetailResponse(
             match=self.to_match_response(match),
@@ -156,6 +180,88 @@ class MatchService:
             events=sorted(events, key=lambda item: item.occurred_at),
             highlights=[],
         )
+
+    def get_player_analytics_detail(
+        self,
+        match_id: uuid.UUID,
+        player_id: uuid.UUID,
+    ) -> PlayerAnalyticsDetailResponse:
+        detail = self.get_public_match_detail(match_id)
+        player = next((item for item in detail.players if item.id == player_id), None)
+        if player is None:
+            raise self._not_found(
+                "Player is not assigned to this match.",
+                "PLAYER_NOT_IN_MATCH",
+            )
+        analytics = self.repository.get_player_analytics(match_id, player_id)
+        if analytics is None:
+            return PlayerAnalyticsDetailResponse(
+                match=detail.match,
+                player=player,
+                position_samples=[],
+                intensity_buckets=[],
+                events=[],
+            )
+        return PlayerAnalyticsDetailResponse(
+            match=detail.match,
+            player=player,
+            position_samples=[
+                PositionSampleResponse(
+                    timestamp_ms=sample.timestamp_ms,
+                    x=sample.x,
+                    y=sample.y,
+                )
+                for sample in analytics.position_samples
+            ],
+            intensity_buckets=[
+                IntensityBucketResponse(
+                    from_minute=bucket.from_minute,
+                    to_minute=bucket.to_minute,
+                    intensity=bucket.intensity,
+                )
+                for bucket in analytics.intensity_buckets
+            ],
+            events=[
+                PlayerAnalyticsEventResponse(
+                    id=event.id,
+                    event_type=cast(
+                        Literal[
+                            "sprint",
+                            "peak_speed",
+                            "high_intensity_period",
+                            "custom",
+                        ],
+                        event.event_type,
+                    ),
+                    timestamp_ms=event.timestamp_ms,
+                    speed_kmh=event.speed_kmh,
+                    title=event.title,
+                )
+                for event in analytics.events
+            ],
+        )
+
+    def compare_players(
+        self,
+        match_id: uuid.UUID,
+        left_player_id: uuid.UUID,
+        right_player_id: uuid.UUID,
+    ) -> PlayerComparisonResponse:
+        if left_player_id == right_player_id:
+            raise self._conflict(
+                "Select two different players.",
+                "COMPARISON_PLAYERS_MUST_DIFFER",
+            )
+        detail = self.get_public_match_detail(match_id)
+        players = {player.id: player for player in detail.players}
+        left = players.get(left_player_id)
+        right = players.get(right_player_id)
+        if left is None or right is None:
+            raise self._not_found(
+                "Both comparison players must belong to this match.",
+                "COMPARISON_PLAYER_NOT_IN_MATCH",
+            )
+        return PlayerComparisonResponse(left=left, right=right)
 
     def update_match_state(
         self,
@@ -457,6 +563,21 @@ class MatchService:
             override_actor=assignment.override_actor,
             override_reason=assignment.override_reason,
         )
+
+    @staticmethod
+    def _apply_analytics(
+        player: MatchPlayerResponse,
+        analytics: PlayerMatchAnalytics,
+    ) -> None:
+        player.rating = analytics.rating
+        player.distance_m = analytics.distance_m
+        player.avg_speed_kmh = analytics.avg_speed_kmh
+        player.max_speed_kmh = analytics.max_speed_kmh
+        player.sprint_count = analytics.sprint_count
+        player.active_seconds = analytics.active_seconds
+        player.activity_count = analytics.activity_count
+        player.peak_speed_at_ms = analytics.peak_speed_at_ms
+        player.analytics_status = cast(AnalyticsStatus, analytics.status)
 
     @staticmethod
     def _not_found(detail: str, code: str) -> DomainError:
