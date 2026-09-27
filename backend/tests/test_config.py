@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from pydantic import ValidationError
 
@@ -43,6 +45,31 @@ def test_production_rejects_wildcard_cors_and_disabled_rate_limit() -> None:
             cors_allowed_origins="https://app.example.com",
             auth_rate_limit_enabled=False,
         )
+
+
+def test_development_allows_private_lan_cors_regex() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="development",
+        database_url="postgresql+psycopg://user:pass@localhost:5432/meydanai",
+        cors_allowed_origins="http://localhost:3000",
+    )
+
+    assert settings.cors_origin_regex is not None
+    assert re.match(settings.cors_origin_regex, "http://192.168.0.101:3000")
+    assert re.match(settings.cors_origin_regex, "http://10.0.0.12:3000")
+    assert not re.match(settings.cors_origin_regex, "https://evil.example.com")
+
+
+def test_production_disables_lan_cors_regex() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="production",
+        database_url="postgresql+psycopg://user:pass@localhost:5432/meydanai",
+        cors_allowed_origins="https://app.example.com",
+    )
+
+    assert settings.cors_origin_regex is None
 
 
 def test_production_accepts_explicit_origins_and_rate_limits() -> None:

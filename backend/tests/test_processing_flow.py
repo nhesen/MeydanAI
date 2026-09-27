@@ -2,7 +2,6 @@ import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -22,7 +21,7 @@ from app.schemas.ingestion import (
     TrackMappingIngest,
 )
 from app.schemas.matches import AssignmentCreate, MatchCreate
-from app.schemas.processing import ProcessingJobStateUpdate
+from app.schemas.processing import DetectedRosterRequest, ProcessingJobStateUpdate
 from app.services.analytics_ingestion import AnalyticsIngestionService
 from app.services.analytics_provider import ProviderJobStatus
 from app.services.matches import MatchService
@@ -77,6 +76,25 @@ def test_processing_job_creation(session: Session) -> None:
     assert job.status == ProcessingStatus.QUEUED
     assert job.stage == ProcessingStage.QUEUED
     assert job.progress == 0
+
+
+def test_ensure_detected_roster_creates_temporary_players(session: Session) -> None:
+    match, job = create_job(session)
+    context = ProcessingService(session).ensure_detected_roster(
+        job.id,
+        DetectedRosterRequest(track_count=3),
+    )
+    assert len(context.assignments) == 3
+    assert {item.side for item in context.assignments} == {"home", "away"}
+    assert all(item.display_name.startswith("Detected ") for item in context.assignments)
+
+    again = ProcessingService(session).ensure_detected_roster(
+        job.id,
+        DetectedRosterRequest(track_count=8),
+    )
+    assert [item.player_id for item in again.assignments] == [
+        item.player_id for item in context.assignments
+    ]
 
 
 def test_processing_job_rejects_invalid_match_and_unauthorized_access(
@@ -368,6 +386,35 @@ def test_analytics_ingestion_is_transactional_and_idempotent(
     assert reused.value.error_code == "IDEMPOTENCY_KEY_REUSED"
 
 
+def test_analytics_ingestion_accepts_duplicate_track_mapping(
+    session: Session,
+) -> None:
+    _, assignment, job = create_processing_player(session)
+    payload = PlayerAnalyticsIngest(
+        player_id=assignment.player.id,
+        team_id=assignment.team.id,
+        provider_track_id="track-same",
+        metrics=AnalyticsMetricsIngest(distance_m=80, activity_count=4),
+        positions=[PositionSampleIngest(timestamp_ms=0, x=0.2, y=0.4)],
+        track_mappings=[
+            TrackMappingIngest(
+                provider_track_id="track-same",
+                mapping_status="mapped",
+                player_id=assignment.player.id,
+                team_id=assignment.team.id,
+                observed_jersey=7,
+            )
+        ],
+    )
+    result = AnalyticsIngestionService(session, max_position_samples=100).ingest(
+        job.id,
+        f"{job.id}:track-same",
+        payload,
+    )
+    assert result.duplicate is False
+    assert result.position_count == 1
+
+
 def test_analytics_ingestion_rejects_invalid_mapping_and_coordinates(
     session: Session,
 ) -> None:
@@ -437,27 +484,15 @@ def test_analytics_ingestion_rolls_back_replacement_on_persistence_failure(
     assert detail.player.distance_m == 1000
 
 
-def test_internal_worker_auth_is_disabled_without_configuration(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        internal_processing,
-        "get_settings",
-        lambda: SimpleNamespace(internal_worker_token=None),
-    )
+def test_internal_worker_auth_is_disabled_without_configuration() -> None:
     with pytest.raises(DomainError) as disabled:
-        internal_processing.require_internal_worker()
+        internal_processing.authorize_worker(None, None)
     assert disabled.value.error_code == "WORKER_AUTH_NOT_CONFIGURED"
 
-    monkeypatch.setattr(
-        internal_processing,
-        "get_settings",
-        lambda: SimpleNamespace(internal_worker_token="worker-secret"),
-    )
     with pytest.raises(DomainError) as denied:
-        internal_processing.require_internal_worker("wrong-secret")
+        internal_processing.authorize_worker("worker-secret", "wrong-secret")
     assert denied.value.error_code == "WORKER_ACCESS_DENIED"
-    internal_processing.require_internal_worker("worker-secret")
+    internal_processing.authorize_worker("worker-secret", "worker-secret")
 
 
 def test_final_ingestion_completes_job_and_blocks_new_batches(

@@ -64,6 +64,22 @@ class MatchRepository:
             )
         )
 
+    def list_active_assignments(self, match_id: uuid.UUID) -> list[JerseyAssignment]:
+        return list(
+            self.session.scalars(
+                select(JerseyAssignment)
+                .where(
+                    JerseyAssignment.match_id == match_id,
+                    JerseyAssignment.ended_at.is_(None),
+                )
+                .options(
+                    joinedload(JerseyAssignment.player),
+                    joinedload(JerseyAssignment.team),
+                )
+                .order_by(JerseyAssignment.jersey_number, JerseyAssignment.created_at)
+            )
+        )
+
     def list_assignments(self, match_id: uuid.UUID) -> list[JerseyAssignment]:
         return list(
             self.session.scalars(

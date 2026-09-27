@@ -16,6 +16,7 @@ dependencies = [
   "python-multipart>=0.0.20,<1",
   "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.35,<1",
+  "opencv-python-headless>=4.10,<5",
 ]
 
 [project.optional-dependencies]
@@ -46,3 +47,7 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 exclude = ["alembic/versions/"]
+
+[[tool.mypy.overrides]]
+module = ["cv2"]
+ignore_missing_imports = true

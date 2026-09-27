@@ -54,6 +54,18 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         return self.cors_allowed_origins.split(",")
 
+    @property
+    def cors_origin_regex(self) -> str | None:
+        if self.app_env == "production":
+            return None
+        return (
+            r"^https?://(localhost|127\.0\.0\.1|"
+            r"192\.168\.\d{1,3}\.\d{1,3}|"
+            r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+            r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})"
+            r"(:\d+)?$"
+        )
+
     @field_validator("internal_worker_token")
     @classmethod
     def normalize_worker_token(cls, value: str | None) -> str | None:

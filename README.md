@@ -175,7 +175,7 @@ service.
 - Account register, login, logout, and profile
 - Match create, public match detail, organizer manage, QR join, jersey assignment
 - Dashboard, matches, players, teams, analytics rankings, and highlights
-- Processing job create/retry/cancel and internal ingestion
+- Processing job create/retry and local OpenCV motion worker
 - Admin dashboard, users, matches, players, teams, jobs, and highlights
 
 ## API conventions
@@ -204,9 +204,11 @@ in production.
 
 ## Known limitations
 
-- There is no real computer-vision model and no on-box video inference
-- Processing jobs enqueue to an external-provider interface; results are ingested
-  through internal worker endpoints
+- Local video analysis uses OpenCV motion tracking, not a trained player/jersey model
+- Detected tracks are mapped to assigned players by field side and activity, not OCR
+- If a match has no jersey assignments, the worker creates temporary detected players from motion tracks
+- Reported speed, distance, sprints, and rating are clamped to football-plausible bounds; they are estimates, not GPS
+- Broadcast-quality CV, cloud storage, and email verification are not implemented
 - Email verification, password reset, and outbound email are not implemented
 - Object storage and CDN-backed highlight media are not implemented
 - Rate limiting is in-process and is not shared across multiple API replicas

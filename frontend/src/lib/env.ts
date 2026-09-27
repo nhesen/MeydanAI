@@ -20,7 +20,7 @@ export function getApiBaseUrl(): string {
     throw new Error("NEXT_PUBLIC_API_URL must use HTTP or HTTPS.");
   }
 
-  return url.toString().replace(/\/$/, "");
+  return rewriteLocalhostForLan(url).toString().replace(/\/$/, "");
 }
 
 export function getAppBaseUrl(): string {
@@ -34,5 +34,15 @@ export function getAppBaseUrl(): string {
   if (!HTTP_PROTOCOLS.has(url.protocol)) {
     throw new Error("NEXT_PUBLIC_APP_URL must use HTTP or HTTPS.");
   }
-  return url.toString().replace(/\/$/, "");
+  return rewriteLocalhostForLan(url).toString().replace(/\/$/, "");
+}
+
+function rewriteLocalhostForLan(url: URL): URL {
+  if (typeof window === "undefined") {
+    return url;
+  }
+  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+    url.hostname = window.location.hostname;
+  }
+  return url;
 }

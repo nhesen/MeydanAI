@@ -125,8 +125,9 @@ export function ProcessingJobsPanel({
               Upload match video
             </h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-              MP4, MOV, and WebM are accepted. Uploading creates a queued job;
-              analytics only appear after an authenticated worker submits real results.
+              MP4, MOV, and WebM are accepted. The local worker tracks movement
+              and writes analytics. If nobody has joined with a jersey yet,
+              temporary detected players are created automatically.
             </p>
           </div>
           <Upload className="size-6 text-brand-700" aria-hidden="true" />
@@ -320,6 +321,8 @@ function uploadErrorMessage(caught: unknown): string {
       return "Select a valid MP4, MOV, or WebM video.";
     case "ORGANIZER_ACCESS_DENIED":
       return "Organizer access has expired for this match.";
+    case "UPLOAD_FAILED":
+      return "The video could not be stored. Try again in a moment.";
     default:
       return "The video could not be uploaded.";
   }

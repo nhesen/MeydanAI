@@ -29,6 +29,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.cors_origins,
+        allow_origin_regex=app_settings.cors_origin_regex,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[
@@ -62,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
+    application.state.settings = app_settings
     application.include_router(api_router, prefix=app_settings.api_v1_prefix)
     register_exception_handlers(application)
     return application

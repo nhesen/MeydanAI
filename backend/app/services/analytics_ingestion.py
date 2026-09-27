@@ -270,6 +270,17 @@ class AnalyticsIngestionService:
             provider_track_id,
         )
         if mapping is None:
+            mapping = next(
+                (
+                    item
+                    for item in self.session.new
+                    if isinstance(item, ProcessingTrackMapping)
+                    and item.job_id == job_id
+                    and item.provider_track_id == provider_track_id
+                ),
+                None,
+            )
+        if mapping is None:
             mapping = ProcessingTrackMapping(
                 job_id=job_id,
                 provider_track_id=provider_track_id,

@@ -12,11 +12,19 @@ from app.core.processing import (
     ProcessingStatus,
     can_transition,
 )
-from app.models.domain import ProcessingJob, User
+from app.core.tokens import aware
+from app.models.domain import JerseyAssignment, Player, ProcessingJob, User
 from app.repositories.processing import ProcessingRepository
-from app.schemas.processing import ProcessingJobResponse, ProcessingJobStateUpdate
+from app.schemas.processing import (
+    DetectedRosterRequest,
+    ProcessingJobResponse,
+    ProcessingJobStateUpdate,
+    WorkerAssignmentContext,
+    WorkerJobContext,
+    WorkerJobSummary,
+)
 from app.services.analytics_provider import AnalyticsProcessor, get_analytics_processor
-from app.services.matches import MatchService
+from app.services.matches import MatchService, normalize_name
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +33,10 @@ SAFE_PROCESSING_ERRORS = {
     "UPLOAD_FAILED": "The video could not be stored.",
     "PROCESSING_FAILED": "Video processing could not be completed.",
     "INVALID_ANALYTICS_PAYLOAD": "The processing result was invalid.",
-    "PLAYER_MAPPING_FAILED": "Some detected players could not be mapped.",
+    "PLAYER_MAPPING_FAILED": (
+        "Players could not be mapped. Add jersey assignments or use a clearer match video."
+    ),
+    "NO_MOTION_DETECTED": "No moving players were found in this video.",
     "PERSISTENCE_FAILED": "The analytics result could not be saved.",
 }
 
@@ -192,8 +203,101 @@ class ProcessingService:
         self.repository.add(retry)
         self.session.commit()
         stored = self._require_job(retry.id)
+        processor = self.processor or get_analytics_processor(stored.provider)
+        processor.enqueue(stored.id, stored.source_reference)
         self._log_lifecycle(stored, "processing_job_retried")
         return self.to_response(stored)
+
+    def list_queued_jobs(self, *, limit: int = 20) -> list[WorkerJobSummary]:
+        return [
+            WorkerJobSummary(
+                id=job.id,
+                match_id=job.match_id,
+                source_reference=job.source_reference,
+                status=cast(ProcessingStatus, job.status),
+            )
+            for job in self.repository.list_queued_jobs(limit=limit)
+        ]
+
+    def get_worker_context(self, job_id: uuid.UUID) -> WorkerJobContext:
+        job = self._require_job(job_id)
+        match = MatchService(self.session)._require_match(job.match_id)
+        side_by_team = {row.team_id: row.side for row in match.teams}
+        assignments = [
+            WorkerAssignmentContext(
+                player_id=assignment.player_id,
+                team_id=assignment.team_id,
+                team_name=assignment.team.name,
+                side=side_by_team.get(assignment.team_id, "home"),
+                jersey_number=assignment.jersey_number,
+                display_name=assignment.player.display_name,
+            )
+            for assignment in MatchService(self.session).repository.list_active_assignments(
+                job.match_id
+            )
+        ]
+        return WorkerJobContext(
+            id=job.id,
+            match_id=job.match_id,
+            source_reference=job.source_reference,
+            status=cast(ProcessingStatus, job.status),
+            assignments=assignments,
+        )
+
+    def ensure_detected_roster(
+        self,
+        job_id: uuid.UUID,
+        payload: DetectedRosterRequest,
+    ) -> WorkerJobContext:
+        context = self.get_worker_context(job_id)
+        if context.assignments:
+            return context
+        match = MatchService(self.session)._require_match(context.match_id)
+        home = next((row for row in match.teams if row.side == "home"), None)
+        away = next((row for row in match.teams if row.side == "away"), None)
+        if home is None or away is None:
+            raise DomainError(
+                status=409,
+                title="Match teams are incomplete",
+                detail="Both home and away teams are required before analysis.",
+                error_code="PLAYER_MAPPING_FAILED",
+            )
+        home_count = min(11, (payload.track_count + 1) // 2)
+        away_count = min(11, max(0, payload.track_count - home_count))
+        started_at = max(datetime.now(UTC), aware(match.starts_at))
+        for index in range(home_count):
+            self._add_detected_player(match.id, home.team_id, "home", index + 1, started_at)
+        for index in range(away_count):
+            self._add_detected_player(match.id, away.team_id, "away", index + 1, started_at)
+        self.session.commit()
+        return self.get_worker_context(job_id)
+
+    def _add_detected_player(
+        self,
+        match_id: uuid.UUID,
+        team_id: uuid.UUID,
+        side: str,
+        jersey_number: int,
+        started_at: datetime,
+    ) -> None:
+        name = f"Detected {side} {jersey_number}"
+        player = Player(
+            display_name=name,
+            normalized_name=normalize_name(name),
+            is_temporary=True,
+        )
+        matches = MatchService(self.session)
+        matches.repository.add(player)
+        matches.repository.flush()
+        matches.repository.add(
+            JerseyAssignment(
+                match_id=match_id,
+                team_id=team_id,
+                player_id=player.id,
+                jersey_number=jersey_number,
+                started_at=started_at,
+            )
+        )
 
     def _require_job(
         self,

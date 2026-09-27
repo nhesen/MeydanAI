@@ -2,15 +2,21 @@ import secrets
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.exceptions import DomainError
 from app.schemas.common import ApiResponse
 from app.schemas.ingestion import AnalyticsIngestionResponse, PlayerAnalyticsIngest
-from app.schemas.processing import ProcessingJobResponse, ProcessingJobStateUpdate
+from app.schemas.processing import (
+    DetectedRosterRequest,
+    ProcessingJobResponse,
+    ProcessingJobStateUpdate,
+    WorkerJobContext,
+    WorkerJobSummary,
+)
 from app.services.analytics_ingestion import AnalyticsIngestionService
 from app.services.processing import ProcessingService
 
@@ -26,8 +32,12 @@ IdempotencyKey = Annotated[
 ]
 
 
-def require_internal_worker(worker_token: WorkerToken = None) -> None:
-    configured_token = get_settings().internal_worker_token
+def app_settings(request: Request) -> Settings:
+    stored = getattr(request.app.state, "settings", None)
+    return stored if isinstance(stored, Settings) else get_settings()
+
+
+def authorize_worker(configured_token: str | None, worker_token: str | None) -> None:
     if configured_token is None:
         raise DomainError(
             status=503,
@@ -45,6 +55,49 @@ def require_internal_worker(worker_token: WorkerToken = None) -> None:
             detail="A valid internal worker token is required.",
             error_code="WORKER_ACCESS_DENIED",
         )
+
+
+def require_internal_worker(
+    request: Request,
+    worker_token: WorkerToken = None,
+) -> None:
+    authorize_worker(app_settings(request).internal_worker_token, worker_token)
+
+
+@router.get(
+    "",
+    response_model=ApiResponse[list[WorkerJobSummary]],
+    dependencies=[Depends(require_internal_worker)],
+)
+def list_queued_processing_jobs(
+    session: DatabaseSession,
+) -> ApiResponse[list[WorkerJobSummary]]:
+    return ApiResponse(data=ProcessingService(session).list_queued_jobs())
+
+
+@router.get(
+    "/{job_id}/context",
+    response_model=ApiResponse[WorkerJobContext],
+    dependencies=[Depends(require_internal_worker)],
+)
+def get_processing_job_context(
+    job_id: uuid.UUID,
+    session: DatabaseSession,
+) -> ApiResponse[WorkerJobContext]:
+    return ApiResponse(data=ProcessingService(session).get_worker_context(job_id))
+
+
+@router.post(
+    "/{job_id}/detected-roster",
+    response_model=ApiResponse[WorkerJobContext],
+    dependencies=[Depends(require_internal_worker)],
+)
+def ensure_detected_roster(
+    job_id: uuid.UUID,
+    payload: DetectedRosterRequest,
+    session: DatabaseSession,
+) -> ApiResponse[WorkerJobContext]:
+    return ApiResponse(data=ProcessingService(session).ensure_detected_roster(job_id, payload))
 
 
 @router.patch(
@@ -69,9 +122,10 @@ def ingest_player_analytics(
     job_id: uuid.UUID,
     payload: PlayerAnalyticsIngest,
     session: DatabaseSession,
+    request: Request,
     idempotency_key: IdempotencyKey,
 ) -> ApiResponse[AnalyticsIngestionResponse]:
-    settings = get_settings()
+    settings = app_settings(request)
     return ApiResponse(
         data=AnalyticsIngestionService(
             session,

@@ -79,6 +79,17 @@ class LocalVideoStorage:
                     "The file content does not match a supported video format."
                 )
             os.replace(temporary_path, final_path)
+        except DomainError:
+            temporary_path.unlink(missing_ok=True)
+            raise
+        except PermissionError as error:
+            temporary_path.unlink(missing_ok=True)
+            raise DomainError(
+                status=500,
+                title="Video could not be stored",
+                detail="The video storage path is not writable.",
+                error_code="UPLOAD_FAILED",
+            ) from error
         except Exception:
             temporary_path.unlink(missing_ok=True)
             raise

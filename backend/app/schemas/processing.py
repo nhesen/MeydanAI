@@ -23,6 +23,34 @@ class ProcessingJobResponse(BaseModel):
     error_message: str | None
 
 
+class WorkerJobSummary(BaseModel):
+    id: uuid.UUID
+    match_id: uuid.UUID
+    source_reference: str
+    status: ProcessingStatus
+
+
+class WorkerAssignmentContext(BaseModel):
+    player_id: uuid.UUID
+    team_id: uuid.UUID
+    team_name: str
+    side: str
+    jersey_number: int
+    display_name: str
+
+
+class WorkerJobContext(BaseModel):
+    id: uuid.UUID
+    match_id: uuid.UUID
+    source_reference: str
+    status: ProcessingStatus
+    assignments: list[WorkerAssignmentContext]
+
+
+class DetectedRosterRequest(BaseModel):
+    track_count: int = Field(ge=1, le=22)
+
+
 class ProcessingJobStateUpdate(BaseModel):
     status: ProcessingStatus
     stage: ProcessingStage

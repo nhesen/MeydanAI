@@ -25,6 +25,16 @@ class ProcessingRepository:
             query = query.with_for_update()
         return self.session.scalar(query)
 
+    def list_queued_jobs(self, *, limit: int) -> list[ProcessingJob]:
+        return list(
+            self.session.scalars(
+                select(ProcessingJob)
+                .where(ProcessingJob.status == "queued")
+                .order_by(ProcessingJob.created_at.asc())
+                .limit(limit)
+            )
+        )
+
     def list_jobs(self, match_id: uuid.UUID) -> list[ProcessingJob]:
         return list(
             self.session.scalars(

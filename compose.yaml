@@ -35,7 +35,7 @@ services:
       AUTH_RATE_LIMIT_ENABLED: ${AUTH_RATE_LIMIT_ENABLED:-true}
       AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
       AUTH_BOOTSTRAP_ADMIN_EMAIL: ${AUTH_BOOTSTRAP_ADMIN_EMAIL:-}
-      INTERNAL_WORKER_TOKEN: ${INTERNAL_WORKER_TOKEN:-}
+      INTERNAL_WORKER_TOKEN: ${INTERNAL_WORKER_TOKEN:-local-dev-worker-token}
       VIDEO_STORAGE_PATH: /app/var/videos
     ports:
       - "8000:8000"
@@ -56,6 +56,24 @@ services:
       timeout: 5s
       retries: 8
       start_period: 20s
+
+  worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      API_BASE_URL: http://backend:8000
+      INTERNAL_WORKER_TOKEN: ${INTERNAL_WORKER_TOKEN:-local-dev-worker-token}
+      VIDEO_STORAGE_PATH: /app/var/videos
+    volumes:
+      - backend-videos:/app/var/videos
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      disable: true
 
   frontend:
     build:
