@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.exceptions import DomainError
 from app.models.domain import User
-from app.services.auth import AuthService
 
 DatabaseSession = Annotated[Session, Depends(get_db)]
 AuthorizationHeader = Annotated[str | None, Header(alias="Authorization")]
@@ -52,6 +51,8 @@ def get_optional_user(
     session: DatabaseSession,
     authorization: AuthorizationHeader = None,
 ) -> User | None:
+    from app.services.auth import AuthService
+
     token = parse_bearer_token(authorization)
     if token is None:
         return None

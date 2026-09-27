@@ -12,7 +12,7 @@ from app.core.processing import (
     ProcessingStatus,
     can_transition,
 )
-from app.models.domain import ProcessingJob
+from app.models.domain import ProcessingJob, User
 from app.repositories.processing import ProcessingRepository
 from app.schemas.processing import ProcessingJobResponse, ProcessingJobStateUpdate
 from app.services.analytics_provider import AnalyticsProcessor, get_analytics_processor
@@ -62,13 +62,14 @@ class ProcessingService:
         self,
         *,
         match_id: uuid.UUID,
-        organizer_token: str,
+        organizer_token: str | None = None,
+        user: User | None = None,
         source_reference: str,
         source_media_type: str,
         source_size_bytes: int,
         provider: str,
     ) -> ProcessingJobResponse:
-        MatchService(self.session).get_organizer_match(match_id, organizer_token)
+        MatchService(self.session).get_organizer_match(match_id, organizer_token, user)
         job = ProcessingJob(
             match_id=match_id,
             status=ProcessingStatus.QUEUED.value,
@@ -91,18 +92,20 @@ class ProcessingService:
     def list_jobs(
         self,
         match_id: uuid.UUID,
-        organizer_token: str,
+        organizer_token: str | None = None,
+        user: User | None = None,
     ) -> list[ProcessingJobResponse]:
-        MatchService(self.session).get_organizer_match(match_id, organizer_token)
+        MatchService(self.session).get_organizer_match(match_id, organizer_token, user)
         return [self.to_response(job) for job in self.repository.list_jobs(match_id)]
 
     def get_job(
         self,
         job_id: uuid.UUID,
-        organizer_token: str,
+        organizer_token: str | None = None,
+        user: User | None = None,
     ) -> ProcessingJobResponse:
         job = self._require_job(job_id)
-        MatchService(self.session).get_organizer_match(job.match_id, organizer_token)
+        MatchService(self.session).get_organizer_match(job.match_id, organizer_token, user)
         return self.to_response(job)
 
     def update_state(
@@ -160,12 +163,14 @@ class ProcessingService:
     def retry_job(
         self,
         job_id: uuid.UUID,
-        organizer_token: str,
+        organizer_token: str | None = None,
+        user: User | None = None,
     ) -> ProcessingJobResponse:
         failed_job = self._require_job(job_id, for_update=True)
         MatchService(self.session).get_organizer_match(
             failed_job.match_id,
             organizer_token,
+            user,
         )
         if ProcessingStatus(failed_job.status) != ProcessingStatus.FAILED:
             raise self._conflict(

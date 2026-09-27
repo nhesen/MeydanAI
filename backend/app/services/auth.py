@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.exceptions import DomainError
 from app.core.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
+from app.core.tokens import aware, create_token, hash_token
 from app.models.domain import AuthSession, User
 from app.repositories.auth import AuthRepository
 from app.schemas.auth import AuthCredentials, AuthSessionResponse, UserResponse
-from app.services.matches import aware, create_token, hash_token
 
 logger = logging.getLogger(__name__)
 

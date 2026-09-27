@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.domain import (
@@ -32,6 +32,41 @@ class ProcessingRepository:
                 .where(ProcessingJob.match_id == match_id)
                 .order_by(ProcessingJob.created_at.desc())
             )
+        )
+
+    def list_jobs_by_status(
+        self,
+        *,
+        status: str | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[int, list[ProcessingJob]]:
+        filters = []
+        if status:
+            filters.append(ProcessingJob.status == status)
+        total = (
+            self.session.scalar(select(func.count()).select_from(ProcessingJob).where(*filters))
+            or 0
+        )
+        items = list(
+            self.session.scalars(
+                select(ProcessingJob)
+                .where(*filters)
+                .order_by(ProcessingJob.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+        )
+        return total, items
+
+    def count_by_status(self, status: str) -> int:
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(ProcessingJob)
+                .where(ProcessingJob.status == status)
+            )
+            or 0
         )
 
     def get_ingestion_batch(

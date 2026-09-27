@@ -1,4 +1,3 @@
-import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -9,6 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import DomainError
+from app.core.security import access_denied, authentication_required, is_admin, owns_match
+from app.core.tokens import aware, create_token, hash_token
 from app.models.domain import (
     JerseyAssignment,
     Match,
@@ -17,6 +18,7 @@ from app.models.domain import (
     Player,
     PlayerMatchAnalytics,
     Team,
+    User,
 )
 from app.repositories.matches import MatchRepository
 from app.schemas.matches import (
@@ -45,20 +47,8 @@ from app.schemas.matches import (
 )
 
 
-def hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def create_token() -> str:
-    return secrets.token_urlsafe(32)
-
-
 def normalize_name(value: str) -> str:
     return " ".join(value.strip().split()).casefold()
-
-
-def aware(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 class MatchService:
@@ -66,7 +56,12 @@ class MatchService:
         self.session = session
         self.repository = MatchRepository(session)
 
-    def create_match(self, payload: MatchCreate) -> MatchCreatedResponse:
+    def create_match(
+        self,
+        payload: MatchCreate,
+        *,
+        organizer_user_id: uuid.UUID | None = None,
+    ) -> MatchCreatedResponse:
         organizer_token = create_token()
         join_token = create_token()
         match = Match(
@@ -75,6 +70,7 @@ class MatchService:
             starts_at=payload.starts_at,
             expected_ends_at=payload.expected_ends_at,
             organizer_token_hash=hash_token(organizer_token),
+            organizer_user_id=organizer_user_id,
         )
         team_a = Team(name=payload.team_a_name.strip())
         team_b = Team(name=payload.team_b_name.strip())
@@ -96,10 +92,34 @@ class MatchService:
             organizer_token=organizer_token,
         )
 
-    def get_organizer_match(self, match_id: uuid.UUID, organizer_token: str) -> Match:
+    def authorize_match(
+        self,
+        match_id: uuid.UUID,
+        *,
+        organizer_token: str | None = None,
+        user: User | None = None,
+    ) -> Match:
         match = self._require_match(match_id)
-        self._validate_organizer(match, organizer_token)
-        return match
+        if is_admin(user) or owns_match(user, match.organizer_user_id):
+            return match
+        if organizer_token:
+            self._validate_organizer(match, organizer_token)
+            return match
+        if user is not None:
+            raise access_denied("You do not manage this match.")
+        raise authentication_required()
+
+    def get_organizer_match(
+        self,
+        match_id: uuid.UUID,
+        organizer_token: str | None = None,
+        user: User | None = None,
+    ) -> Match:
+        return self.authorize_match(
+            match_id,
+            organizer_token=organizer_token,
+            user=user,
+        )
 
     def get_public_match_detail(self, match_id: uuid.UUID) -> MatchDetailResponse:
         match = self._require_match(match_id)
@@ -282,10 +302,11 @@ class MatchService:
     def update_match_state(
         self,
         match_id: uuid.UUID,
-        organizer_token: str,
+        organizer_token: str | None,
         payload: MatchStateUpdate,
+        user: User | None = None,
     ) -> MatchResponse:
-        match = self.get_organizer_match(match_id, organizer_token)
+        match = self.get_organizer_match(match_id, organizer_token, user)
         match.status = payload.status
         match.home_score = payload.home_score
         match.away_score = payload.away_score
@@ -309,10 +330,11 @@ class MatchService:
     def rotate_join_token(
         self,
         match_id: uuid.UUID,
-        organizer_token: str,
+        organizer_token: str | None,
         expires_at: datetime | None,
+        user: User | None = None,
     ) -> tuple[str, datetime | None]:
-        match = self.get_organizer_match(match_id, organizer_token)
+        match = self.get_organizer_match(match_id, organizer_token, user)
         now = datetime.now(UTC)
         self.session.execute(
             update(MatchJoinToken)
@@ -383,9 +405,12 @@ class MatchService:
         return self.to_assignment_response(self._require_assignment(assignment.id))
 
     def list_assignments(
-        self, match_id: uuid.UUID, organizer_token: str
+        self,
+        match_id: uuid.UUID,
+        organizer_token: str | None,
+        user: User | None = None,
     ) -> list[AssignmentResponse]:
-        self.get_organizer_match(match_id, organizer_token)
+        self.get_organizer_match(match_id, organizer_token, user)
         return [
             self.to_assignment_response(item) for item in self.repository.list_assignments(match_id)
         ]
@@ -394,10 +419,11 @@ class MatchService:
         self,
         match_id: uuid.UUID,
         assignment_id: uuid.UUID,
-        organizer_token: str,
+        organizer_token: str | None,
         payload: AssignmentCorrection,
+        user: User | None = None,
     ) -> AssignmentResponse:
-        self.get_organizer_match(match_id, organizer_token)
+        self.get_organizer_match(match_id, organizer_token, user)
         assignment = self._require_assignment(assignment_id, match_id)
         if assignment.ended_at is not None:
             raise self._conflict("Assignment is already closed.", "ASSIGNMENT_CLOSED")
@@ -436,8 +462,9 @@ class MatchService:
         self,
         match_id: uuid.UUID,
         assignment_id: uuid.UUID,
-        organizer_token: str,
+        organizer_token: str | None,
         payload: JerseyChange,
+        user: User | None = None,
     ) -> AssignmentResponse:
         correction = AssignmentCorrection(
             jersey_number=payload.jersey_number,
@@ -446,7 +473,7 @@ class MatchService:
             override_reason=payload.override_reason,
             override_actor=payload.override_actor,
         )
-        return self.correct_assignment(match_id, assignment_id, organizer_token, correction)
+        return self.correct_assignment(match_id, assignment_id, organizer_token, correction, user)
 
     def _require_valid_join_token(self, token: str) -> MatchJoinToken:
         if len(token) < 32 or len(token) > 200:
