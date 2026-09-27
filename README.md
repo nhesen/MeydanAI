@@ -80,7 +80,7 @@ Open `http://localhost:3000`. The API health contract is available at
 
 ## Configuration
 
-Frontend requires `NEXT_PUBLIC_API_BASE_URL`, the public absolute URL of the
+Frontend requires `NEXT_PUBLIC_API_URL`, the public absolute URL of the
 backend API.
 
 Backend settings:
@@ -129,7 +129,7 @@ Frontend:
 Set-Location frontend
 npm run lint
 npm run typecheck
-$env:NEXT_PUBLIC_API_BASE_URL = "http://localhost:8000"
+$env:NEXT_PUBLIC_API_URL = "http://localhost:8000"
 npm run build
 ```
 

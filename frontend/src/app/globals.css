@@ -1,8 +1,50 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #f6f8f7;
+  --foreground: #14221a;
+}
+
+@theme {
+  --color-canvas: #f6f8f7;
+  --color-surface: #ffffff;
+  --color-subtle: #edf2ef;
+  --color-border: #dce5df;
+
+  --color-brand-50: #effaf3;
+  --color-brand-100: #d9f2e2;
+  --color-brand-200: #b5e5c6;
+  --color-brand-300: #84d09f;
+  --color-brand-400: #50b575;
+  --color-brand-500: #2f9858;
+  --color-brand-600: #217b46;
+  --color-brand-700: #1c623a;
+  --color-brand-800: #194e32;
+  --color-brand-900: #153f2a;
+  --color-brand-950: #0a2417;
+
+  --color-success-50: #edfdf4;
+  --color-success-100: #d3f8e2;
+  --color-success-700: #157347;
+  --color-success-800: #125c3b;
+
+  --color-warning-50: #fff9e8;
+  --color-warning-100: #fff0bd;
+  --color-warning-700: #9a5b0b;
+  --color-warning-800: #7d480d;
+
+  --color-danger-50: #fff1f1;
+  --color-danger-100: #ffe0e0;
+  --color-danger-600: #d33939;
+  --color-danger-700: #b42323;
+  --color-danger-800: #942020;
+
+  --color-info-50: #eff7ff;
+  --color-info-100: #dceeff;
+  --color-info-700: #2468a9;
+  --color-info-800: #225789;
+
+  --shadow-card: 0 1px 2px rgb(20 34 26 / 0.04);
 }
 
 @theme inline {
@@ -15,14 +57,83 @@
   box-sizing: border-box;
 }
 
+html {
+  background: var(--background);
+}
+
 body {
   min-width: 320px;
+  overflow-x: hidden;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  text-rendering: optimizeLegibility;
 }
 
 button,
 a {
   -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  outline-color: var(--color-brand-600);
+}
+
+::selection {
+  background: var(--color-brand-100);
+  color: var(--color-brand-950);
+}
+
+.type-score {
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-weight: 750;
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+}
+
+.type-page-title {
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.type-section-title {
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+}
+
+.type-stat-value {
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.type-metadata,
+.type-stat-label {
+  color: var(--color-slate-500);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

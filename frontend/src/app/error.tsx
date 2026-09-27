@@ -17,12 +17,12 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
   }, [error]);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-xl items-center px-4 py-12">
+    <div className="mx-auto flex min-h-[70vh] w-full max-w-xl items-center px-4 py-12">
       <ErrorState
         title="Something went wrong"
         message="The page could not be displayed. Please try again."
         onRetry={reset}
       />
-    </main>
+    </div>
   );
 }

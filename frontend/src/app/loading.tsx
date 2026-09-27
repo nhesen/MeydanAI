@@ -1,11 +1,20 @@
 import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
+import { PageContainer } from "@/components/layout/PageContainer";
+import { Card } from "@/components/ui/Card";
 
 export default function Loading() {
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <LoadingSkeleton lines={5} label="Loading page" />
+    <PageContainer>
+      <div className="max-w-2xl">
+        <LoadingSkeleton lines={2} label="Loading page header" />
       </div>
-    </main>
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }, (_, index) => (
+          <Card key={index}>
+            <LoadingSkeleton lines={3} label="Loading content card" />
+          </Card>
+        ))}
+      </div>
+    </PageContainer>
   );
 }
