@@ -18,6 +18,7 @@ interface DensityPoint {
 
 const COLUMN_COUNT = 12;
 const ROW_COUNT = 8;
+const MAX_SAMPLES_FOR_DENSITY = 2500;
 
 export function PlayerHeatmap({
   processing = false,
@@ -116,9 +117,17 @@ export function PlayerHeatmap({
   );
 }
 
+function downsampleSamples(samples: PositionSample[]): PositionSample[] {
+  if (samples.length <= MAX_SAMPLES_FOR_DENSITY) return samples;
+  const step = samples.length / MAX_SAMPLES_FOR_DENSITY;
+  return Array.from({ length: MAX_SAMPLES_FOR_DENSITY }, (_, index) => {
+    return samples[Math.min(samples.length - 1, Math.floor(index * step))];
+  });
+}
+
 function createDensity(samples: PositionSample[]): DensityPoint[] {
   const buckets = new Map<string, { column: number; row: number; count: number }>();
-  for (const sample of samples) {
+  for (const sample of downsampleSamples(samples)) {
     const column = Math.min(
       COLUMN_COUNT - 1,
       Math.max(0, Math.floor(sample.x * COLUMN_COUNT)),

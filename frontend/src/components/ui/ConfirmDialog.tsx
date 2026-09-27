@@ -40,7 +40,7 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center">
       <button
         aria-label="Close dialog"
         className="absolute inset-0 bg-slate-950/40"
@@ -51,7 +51,7 @@ export function ConfirmDialog({
         aria-describedby="confirm-dialog-description"
         aria-labelledby="confirm-dialog-title"
         aria-modal="true"
-        className="relative w-full max-w-md rounded-2xl border border-border bg-white p-5 shadow-card"
+        className="relative max-h-[min(32rem,calc(100dvh-2rem))] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-white p-5 shadow-card"
         role="dialog"
       >
         <h2 className="text-lg font-bold text-slate-950" id="confirm-dialog-title">
