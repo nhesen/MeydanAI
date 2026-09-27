@@ -9,6 +9,7 @@ import type {
   MatchSummary,
   PlayerAnalyticsDetail,
   PlayerComparison,
+  ProcessingJob,
   ServiceHealth,
 } from "@/types/api";
 
@@ -156,6 +157,44 @@ export const api = {
       },
       body: JSON.stringify(input),
     });
+  },
+  createProcessingJob(
+    matchId: string,
+    organizerToken: string,
+    video: File,
+  ) {
+    const body = new FormData();
+    body.append("video", video);
+    return request<ApiResponse<ProcessingJob>>(
+      `/api/v1/matches/${matchId}/processing-jobs`,
+      {
+        method: "POST",
+        headers: { "X-Organizer-Token": organizerToken },
+        body,
+      },
+    );
+  },
+  getProcessingJobs(
+    matchId: string,
+    organizerToken: string,
+    signal?: AbortSignal,
+  ) {
+    return request<ApiResponse<ProcessingJob[]>>(
+      `/api/v1/matches/${matchId}/processing-jobs`,
+      {
+        signal,
+        headers: { "X-Organizer-Token": organizerToken },
+      },
+    );
+  },
+  retryProcessingJob(jobId: string, organizerToken: string) {
+    return request<ApiResponse<ProcessingJob>>(
+      `/api/v1/processing-jobs/${jobId}/retry`,
+      {
+        method: "POST",
+        headers: { "X-Organizer-Token": organizerToken },
+      },
+    );
   },
   getAssignments(
     matchId: string,

@@ -141,6 +141,42 @@ export interface PlayerComparison {
   right: MatchPlayer;
 }
 
+export type ProcessingStatus =
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type ProcessingStage =
+  | "queued"
+  | "uploading"
+  | "validating"
+  | "preprocessing"
+  | "detecting_players"
+  | "tracking_players"
+  | "calibrating_field"
+  | "calculating_metrics"
+  | "persisting_results"
+  | "completed";
+
+export interface ProcessingJob {
+  id: string;
+  match_id: string;
+  retry_of_id: string | null;
+  status: ProcessingStatus;
+  progress: number | null;
+  stage: ProcessingStage;
+  source_type: "uploaded_video";
+  provider: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
 export interface TeamStats {
   team_id: string;
   total_distance_m: number | null;

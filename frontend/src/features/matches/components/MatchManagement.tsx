@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { QR_COLORS } from "@/config/brand";
+import { ProcessingJobsPanel } from "@/features/matches/components/ProcessingJobsPanel";
 import { ApiError, api } from "@/services/api-client";
 import type { JerseyAssignment, MatchSummary } from "@/types/api";
 
@@ -265,6 +266,10 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
           </div>
         </Card>
       ) : null}
+      <ProcessingJobsPanel
+        matchId={matchId}
+        organizerToken={organizerToken}
+      />
       {joinUrl ? (
         <Card className="grid items-center gap-5 sm:grid-cols-[1fr_auto]">
           <div className="min-w-0">
