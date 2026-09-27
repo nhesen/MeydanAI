@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     raw_video_retention_days: int = Field(default=30, ge=1)
     max_position_samples_per_ingestion: int = Field(default=10_000, ge=1)
     internal_worker_token: str | None = None
+    auth_session_ttl_hours: int = Field(default=168, ge=1, le=720)
+    auth_bootstrap_admin_email: str | None = None
+    auth_rate_limit_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -57,6 +60,14 @@ class Settings(BaseSettings):
         if value is None:
             return None
         normalized = value.strip()
+        return normalized or None
+
+    @field_validator("auth_bootstrap_admin_email")
+    @classmethod
+    def normalize_bootstrap_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().casefold()
         return normalized or None
 
 
