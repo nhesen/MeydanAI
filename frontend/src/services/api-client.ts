@@ -7,6 +7,7 @@ import type {
   MatchCreated,
   MatchDetail,
   MatchSummary,
+  PlayerAnalyticsDetail,
   ServiceHealth,
 } from "@/types/api";
 
@@ -113,6 +114,16 @@ export const api = {
   getPublicMatchDetail(matchId: string, signal?: AbortSignal) {
     return request<ApiResponse<MatchDetail>>(
       `/api/v1/public/matches/${matchId}`,
+      { signal },
+    );
+  },
+  getPlayerAnalytics(
+    matchId: string,
+    playerId: string,
+    signal?: AbortSignal,
+  ) {
+    return request<ApiResponse<PlayerAnalyticsDetail>>(
+      `/api/v1/public/matches/${matchId}/players/${playerId}/analytics`,
       { signal },
     );
   },

@@ -89,7 +89,56 @@ export interface MatchPlayer {
   jersey_history: JerseyHistoryItem[];
   rating: number | null;
   distance_m: number | null;
+  avg_speed_kmh: number | null;
+  max_speed_kmh: number | null;
   sprint_count: number | null;
+  active_seconds: number | null;
+  activity_count: number | null;
+  peak_speed_at_ms: number | null;
+  analytics_status: AnalyticsStatus;
+}
+
+export type AnalyticsStatus =
+  | "processing"
+  | "available"
+  | "unavailable"
+  | "failed";
+
+export interface PositionSample {
+  timestamp_ms: number;
+  x: number;
+  y: number;
+}
+
+export interface IntensityBucket {
+  from_minute: number;
+  to_minute: number;
+  intensity: number;
+}
+
+export interface PlayerAnalyticsEvent {
+  id: string;
+  event_type:
+    | "sprint"
+    | "peak_speed"
+    | "high_intensity_period"
+    | "custom";
+  timestamp_ms: number;
+  speed_kmh: number | null;
+  title: string;
+}
+
+export interface PlayerAnalyticsDetail {
+  match: MatchSummary;
+  player: MatchPlayer;
+  position_samples: PositionSample[];
+  intensity_buckets: IntensityBucket[];
+  events: PlayerAnalyticsEvent[];
+}
+
+export interface PlayerComparison {
+  left: MatchPlayer;
+  right: MatchPlayer;
 }
 
 export interface TeamStats {
