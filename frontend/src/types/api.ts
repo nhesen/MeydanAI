@@ -340,3 +340,30 @@ export interface MatchDetail {
   events: TimelineEvent[];
   highlights: MatchHighlight[];
 }
+
+export type UserRole = "user" | "admin";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  player_id: string | null;
+  created_at: string;
+}
+
+export interface AuthSession {
+  user: AuthUser;
+  access_token: string;
+  token_type: "bearer";
+  expires_at: string;
+}
+
+export interface AdminDashboard {
+  total_matches: number;
+  total_users: number;
+  total_players: number;
+  total_teams: number;
+  failed_jobs: number;
+  active_jobs: number;
+  recent_matches: MatchListItem[];
+}

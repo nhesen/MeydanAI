@@ -2,6 +2,7 @@
 
 import { Check, Copy, LockKeyhole } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { ErrorState } from "@/components/feedback/ErrorState";
@@ -27,6 +28,7 @@ interface EditState {
 }
 
 export function MatchManagement({ matchId }: MatchManagementProps) {
+  const router = useRouter();
   const [organizerToken, setOrganizerToken] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState("");
   const [match, setMatch] = useState<MatchSummary | null>(null);
@@ -41,7 +43,7 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const load = useCallback(async (token: string, signal?: AbortSignal) => {
+  const load = useCallback(async (token: string | null, signal?: AbortSignal) => {
     const [matchResponse, assignmentResponse] = await Promise.all([
       api.getMatch(matchId, token, signal),
       api.getAssignments(matchId, token, signal),
@@ -85,15 +87,15 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
       if (cancelled) return;
       const token = sessionStorage.getItem(`meydanai:organizer:${matchId}`);
       setJoinUrl(sessionStorage.getItem(`meydanai:join:${matchId}`) ?? "");
-      if (!token) {
-        setLoading(false);
-        return;
-      }
       setOrganizerToken(token);
       try {
         await load(token, controller.signal);
       } catch {
         if (!controller.signal.aborted) {
+          if (!token) {
+            setLoading(false);
+            return;
+          }
           setError("Match management data could not be loaded.");
         }
       } finally {
@@ -109,7 +111,7 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   }, [load, matchId]);
 
   async function applyChange(assignment: JerseyAssignment) {
-    if (!organizerToken) return;
+    if (!organizerToken && !match) return;
     const edit = edits[assignment.id];
     if (!edit) return;
     setBusyId(assignment.id);
@@ -145,7 +147,7 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   }
 
   async function closeAssignment(assignmentId: string) {
-    if (!organizerToken) return;
+    if (!organizerToken && !match) return;
     setBusyId(assignmentId);
     try {
       await api.correctAssignment(matchId, assignmentId, organizerToken, {
@@ -173,7 +175,7 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   }
 
   async function saveMatchState() {
-    if (!organizerToken) return;
+    if (!organizerToken && !match) return;
     setBusyId("match-state");
     setError(null);
     try {
@@ -194,7 +196,7 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
     return <LoadingSkeleton lines={6} label="Loading match management" />;
   }
 
-  if (!organizerToken) {
+  if (!match && !organizerToken) {
     return (
       <Card>
         <div className="flex items-start gap-3">
@@ -202,9 +204,12 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
           <div>
             <h2 className="font-semibold text-slate-950">Organizer access required</h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              Open this page in the same browser tab where the match was created.
-              Full account-based recovery will arrive with authentication.
+              Sign in as the match owner or open this page in the browser where
+              the match was created.
             </p>
+            <Button className="mt-4" onClick={() => router.push("/login")} size="sm">
+              Sign in
+            </Button>
           </div>
         </div>
       </Card>

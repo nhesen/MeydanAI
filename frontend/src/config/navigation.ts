@@ -6,6 +6,7 @@ import {
   House,
   Settings,
   Shield,
+  ShieldCheck,
   UserRound,
   UsersRound,
   type LucideIcon,
@@ -29,6 +30,10 @@ export const primaryNavigation: NavigationItem[] = [
 export const accountNavigation: NavigationItem[] = [
   { label: "Profile", href: "/profile", icon: UserRound },
   { label: "Settings", href: "/settings", icon: Settings },
+];
+
+export const adminNavigation: NavigationItem[] = [
+  { label: "Admin", href: "/admin", icon: ShieldCheck },
 ];
 
 export const mobileNavigation: NavigationItem[] = [

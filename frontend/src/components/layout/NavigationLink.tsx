@@ -13,7 +13,15 @@ interface NavigationLinkProps {
 
 export function NavigationLink({ item, mobile = false }: NavigationLinkProps) {
   const pathname = usePathname();
-  const secondaryMobileRoutes = ["/teams", "/highlights", "/profile", "/settings"];
+  const secondaryMobileRoutes = [
+    "/teams",
+    "/highlights",
+    "/profile",
+    "/settings",
+    "/admin",
+    "/login",
+    "/register",
+  ];
   const active =
     item.href === "/"
       ? pathname === "/"

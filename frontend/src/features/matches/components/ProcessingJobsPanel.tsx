@@ -26,7 +26,7 @@ import type { ProcessingJob } from "@/types/api";
 
 interface ProcessingJobsPanelProps {
   matchId: string;
-  organizerToken: string;
+  organizerToken?: string | null;
 }
 
 export function ProcessingJobsPanel({

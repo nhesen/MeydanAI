@@ -37,6 +37,12 @@ export default function MorePage() {
           icon={Settings}
           title="Settings"
         />
+        <QuickLinkCard
+          description="Sign in or create an account."
+          href="/login"
+          icon={UserRound}
+          title="Sign in"
+        />
       </div>
     </PageContainer>
   );

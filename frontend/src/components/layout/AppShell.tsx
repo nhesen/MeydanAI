@@ -7,6 +7,7 @@ import { BrandMark } from "@/components/layout/BrandMark";
 import { DesktopSidebar } from "@/components/layout/DesktopSidebar";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { MobileNavigation } from "@/components/layout/MobileNavigation";
+import { AuthProvider } from "@/features/auth/AuthProvider";
 
 interface AppShellProps {
   children: ReactNode;
@@ -14,20 +15,16 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  if (pathname.startsWith("/join/")) {
-    return (
-      <div className="min-h-dvh bg-canvas">
-        <header className="flex h-16 items-center border-b border-border bg-surface px-4">
-          <div className="mx-auto w-full max-w-lg">
-            <BrandMark />
-          </div>
-        </header>
-        <main>{children}</main>
-      </div>
-    );
-  }
-
-  return (
+  const content = pathname.startsWith("/join/") ? (
+    <div className="min-h-dvh bg-canvas">
+      <header className="flex h-16 items-center border-b border-border bg-surface px-4">
+        <div className="mx-auto w-full max-w-lg">
+          <BrandMark />
+        </div>
+      </header>
+      <main>{children}</main>
+    </div>
+  ) : (
     <>
       <DesktopSidebar />
       <div className="min-h-dvh min-w-0 lg:pl-64">
@@ -39,4 +36,6 @@ export function AppShell({ children }: AppShellProps) {
       <MobileNavigation />
     </>
   );
+
+  return <AuthProvider>{content}</AuthProvider>;
 }

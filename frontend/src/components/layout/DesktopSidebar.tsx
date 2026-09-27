@@ -3,9 +3,15 @@
 import { BrandMark } from "@/components/layout/BrandMark";
 import { NavigationLink } from "@/components/layout/NavigationLink";
 import { Divider } from "@/components/ui/Divider";
-import { accountNavigation, primaryNavigation } from "@/config/navigation";
+import {
+  accountNavigation,
+  adminNavigation,
+  primaryNavigation,
+} from "@/config/navigation";
+import { useAuth } from "@/features/auth/AuthProvider";
 
 export function DesktopSidebar() {
+  const { user } = useAuth();
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-border bg-surface lg:flex lg:flex-col">
       <div className="flex h-20 items-center px-5">
@@ -26,6 +32,11 @@ export function DesktopSidebar() {
       <div className="px-3 pb-4">
         <Divider className="mb-3" />
         <nav className="space-y-1" aria-label="Account navigation">
+          {user?.role === "admin"
+            ? adminNavigation.map((item) => (
+                <NavigationLink item={item} key={item.href} />
+              ))
+            : null}
           {accountNavigation.map((item) => (
             <NavigationLink item={item} key={item.href} />
           ))}
