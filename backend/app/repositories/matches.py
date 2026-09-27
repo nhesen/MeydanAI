@@ -140,6 +140,25 @@ class MatchRepository:
             )
         )
 
+    def player_belongs_to_match_team(
+        self,
+        match_id: uuid.UUID,
+        team_id: uuid.UUID,
+        player_id: uuid.UUID,
+    ) -> bool:
+        return (
+            self.session.scalar(
+                select(JerseyAssignment.id)
+                .where(
+                    JerseyAssignment.match_id == match_id,
+                    JerseyAssignment.team_id == team_id,
+                    JerseyAssignment.player_id == player_id,
+                )
+                .limit(1)
+            )
+            is not None
+        )
+
     def add(self, entity: object) -> None:
         self.session.add(entity)
 

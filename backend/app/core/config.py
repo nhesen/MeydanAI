@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     max_video_upload_size: int = Field(default=524_288_000, gt=0)
     video_storage_path: Path = Path("./var/videos")
     raw_video_retention_days: int = Field(default=30, ge=1)
+    max_position_samples_per_ingestion: int = Field(default=10_000, ge=1)
     internal_worker_token: str | None = None
 
     model_config = SettingsConfigDict(

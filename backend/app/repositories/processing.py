@@ -3,7 +3,11 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.domain import ProcessingJob
+from app.models.domain import (
+    ProcessingIngestionBatch,
+    ProcessingJob,
+    ProcessingTrackMapping,
+)
 
 
 class ProcessingRepository:
@@ -27,6 +31,30 @@ class ProcessingRepository:
                 select(ProcessingJob)
                 .where(ProcessingJob.match_id == match_id)
                 .order_by(ProcessingJob.created_at.desc())
+            )
+        )
+
+    def get_ingestion_batch(
+        self,
+        job_id: uuid.UUID,
+        idempotency_key: str,
+    ) -> ProcessingIngestionBatch | None:
+        return self.session.scalar(
+            select(ProcessingIngestionBatch).where(
+                ProcessingIngestionBatch.job_id == job_id,
+                ProcessingIngestionBatch.idempotency_key == idempotency_key,
+            )
+        )
+
+    def get_track_mapping(
+        self,
+        job_id: uuid.UUID,
+        provider_track_id: str,
+    ) -> ProcessingTrackMapping | None:
+        return self.session.scalar(
+            select(ProcessingTrackMapping).where(
+                ProcessingTrackMapping.job_id == job_id,
+                ProcessingTrackMapping.provider_track_id == provider_track_id,
             )
         )
 

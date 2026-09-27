@@ -15,6 +15,7 @@ from app.core.processing import (
 from app.models.domain import ProcessingJob
 from app.repositories.processing import ProcessingRepository
 from app.schemas.processing import ProcessingJobResponse, ProcessingJobStateUpdate
+from app.services.analytics_provider import AnalyticsProcessor, get_analytics_processor
 from app.services.matches import MatchService
 
 logger = logging.getLogger(__name__)
@@ -48,9 +49,14 @@ PROCESSING_STAGE_ORDER = {
 
 
 class ProcessingService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        processor: AnalyticsProcessor | None = None,
+    ) -> None:
         self.session = session
         self.repository = ProcessingRepository(session)
+        self.processor = processor
 
     def create_job(
         self,
@@ -77,6 +83,8 @@ class ProcessingService:
         self.repository.add(job)
         self.session.commit()
         stored = self._require_job(job.id)
+        processor = self.processor or get_analytics_processor(provider)
+        processor.enqueue(stored.id, stored.source_reference)
         self._log_lifecycle(stored, "processing_job_created")
         return self.to_response(stored)
 

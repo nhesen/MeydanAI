@@ -170,6 +170,72 @@ class ProcessingJob(Base):
     retry_of: Mapped["ProcessingJob | None"] = relationship(remote_side=[id])
 
 
+class ProcessingIngestionBatch(Base):
+    __tablename__ = "processing_ingestion_batches"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id",
+            "idempotency_key",
+            name="uq_ingestion_batches_job_key",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("processing_jobs.id", ondelete="CASCADE"), index=True
+    )
+    player_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(120))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    position_count: Mapped[int] = mapped_column(Integer)
+    intensity_bucket_count: Mapped[int] = mapped_column(Integer)
+    event_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ProcessingTrackMapping(Base):
+    __tablename__ = "processing_track_mappings"
+    __table_args__ = (
+        CheckConstraint(
+            "mapping_status IN ('mapped', 'unresolved')",
+            name="ck_track_mappings_status",
+        ),
+        CheckConstraint(
+            "(mapping_status = 'unresolved' AND player_id IS NULL AND team_id IS NULL) "
+            "OR (mapping_status = 'mapped' AND player_id IS NOT NULL "
+            "AND team_id IS NOT NULL)",
+            name="ck_track_mappings_identity",
+        ),
+        CheckConstraint(
+            "observed_jersey IS NULL OR (observed_jersey >= 0 AND observed_jersey <= 99)",
+            name="ck_track_mappings_jersey",
+        ),
+        UniqueConstraint(
+            "job_id",
+            "provider_track_id",
+            name="uq_track_mappings_job_track",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("processing_jobs.id", ondelete="CASCADE"), index=True
+    )
+    provider_track_id: Mapped[str] = mapped_column(String(120))
+    mapping_status: Mapped[str] = mapped_column(String(20))
+    player_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("players.id", ondelete="SET NULL"), index=True
+    )
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))
+    observed_jersey: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
 class MatchJoinToken(Base):
     __tablename__ = "match_join_tokens"
 
