@@ -69,9 +69,9 @@ def admin_update_user_role(
     user_id: uuid.UUID,
     payload: UserRoleUpdate,
     session: DatabaseSession,
-    _: AdminUser,
+    admin: AdminUser,
 ) -> ApiResponse[UserResponse]:
-    return ApiResponse(data=AdminService(session).update_user_role(user_id, payload))
+    return ApiResponse(data=AdminService(session).update_user_role(user_id, payload, admin))
 
 
 @router.get("/matches", response_model=ApiResponse[PageResponse[MatchListItem]])
@@ -183,9 +183,9 @@ def admin_highlights(
 def admin_create_highlight(
     payload: HighlightWrite,
     session: DatabaseSession,
-    _: AdminUser,
+    admin: AdminUser,
 ) -> ApiResponse[PlatformHighlightResponse]:
-    return ApiResponse(data=AdminService(session).create_highlight(payload))
+    return ApiResponse(data=AdminService(session).create_highlight(payload, admin))
 
 
 @router.patch("/highlights/{highlight_id}", response_model=ApiResponse[PlatformHighlightResponse])
@@ -193,15 +193,15 @@ def admin_update_highlight(
     highlight_id: uuid.UUID,
     payload: HighlightUpdate,
     session: DatabaseSession,
-    _: AdminUser,
+    admin: AdminUser,
 ) -> ApiResponse[PlatformHighlightResponse]:
-    return ApiResponse(data=AdminService(session).update_highlight(highlight_id, payload))
+    return ApiResponse(data=AdminService(session).update_highlight(highlight_id, payload, admin))
 
 
 @router.delete("/highlights/{highlight_id}", status_code=status.HTTP_204_NO_CONTENT)
 def admin_delete_highlight(
     highlight_id: uuid.UUID,
     session: DatabaseSession,
-    _: AdminUser,
+    admin: AdminUser,
 ) -> None:
-    AdminService(session).delete_highlight(highlight_id)
+    AdminService(session).delete_highlight(highlight_id, admin)

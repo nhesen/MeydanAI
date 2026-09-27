@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -11,7 +11,7 @@ from app.core.config import Settings
 from app.core.database import Base, get_db
 from app.core.exceptions import DomainError
 from app.main import create_app
-from app.models.domain import ProcessingJob, User
+from app.models.domain import AuditLog, ProcessingJob, User
 from app.schemas.admin import HighlightWrite, UserRoleUpdate
 from app.schemas.auth import AuthCredentials
 from app.schemas.matches import MatchCreate, MatchStateUpdate
@@ -175,13 +175,18 @@ def test_admin_role_change_and_last_admin_lockout(session: Session) -> None:
     admin, _ = register_user(session, "keeper@example.com", admin=True)
     member, _ = register_user(session, "promoted@example.com")
     service = AdminService(session)
-    promoted = service.update_user_role(member.id, UserRoleUpdate(role="admin"))
+    promoted = service.update_user_role(member.id, UserRoleUpdate(role="admin"), admin)
     assert promoted.role == "admin"
 
-    service.update_user_role(member.id, UserRoleUpdate(role="user"))
+    service.update_user_role(member.id, UserRoleUpdate(role="user"), admin)
     with pytest.raises(DomainError) as raised:
-        service.update_user_role(admin.id, UserRoleUpdate(role="user"))
+        service.update_user_role(admin.id, UserRoleUpdate(role="user"), admin)
     assert raised.value.error_code == "LAST_ADMIN_REQUIRED"
+    audit = session.scalar(select(AuditLog).where(AuditLog.action == "user.role_change"))
+    assert audit is not None
+    assert audit.actor_user_id == admin.id
+    assert audit.event_metadata is not None
+    assert "password" not in audit.event_metadata
 
 
 def test_admin_highlight_management_and_retry_permission(
@@ -196,7 +201,8 @@ def test_admin_highlight_management_and_retry_permission(
             highlight_type="manual",
             timestamp_ms=12000,
             title="Opening run",
-        )
+        ),
+        admin,
     )
     listed = client.get(
         "/api/v1/admin/highlights",

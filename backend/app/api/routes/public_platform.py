@@ -2,10 +2,11 @@ import uuid
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit_search
 from app.schemas.common import ApiResponse
 from app.schemas.platform import (
     AnalyticsLeaderboardsResponse,
@@ -47,6 +48,7 @@ def get_dashboard(session: DatabaseSession) -> ApiResponse[DashboardResponse]:
 )
 def list_matches(
     session: DatabaseSession,
+    request: Request,
     q: SearchQuery = None,
     status: MatchStatus | None = None,
     team_id: uuid.UUID | None = None,
@@ -55,6 +57,8 @@ def list_matches(
     page: Page = 1,
     page_size: PageSize = 12,
 ) -> ApiResponse[PageResponse[MatchListItem]]:
+    if q:
+        rate_limit_search(request)
     return ApiResponse(
         data=PlatformService(session).list_matches(
             query=q,
@@ -74,11 +78,14 @@ def list_matches(
 )
 def list_players(
     session: DatabaseSession,
+    request: Request,
     q: SearchQuery = None,
     team_id: uuid.UUID | None = None,
     page: Page = 1,
     page_size: PageSize = 20,
 ) -> ApiResponse[PageResponse[PlayerDirectoryItem]]:
+    if q:
+        rate_limit_search(request)
     return ApiResponse(
         data=PlatformService(session).list_players(
             query=q,
@@ -106,10 +113,13 @@ def get_player(
 )
 def list_teams(
     session: DatabaseSession,
+    request: Request,
     q: SearchQuery = None,
     page: Page = 1,
     page_size: PageSize = 20,
 ) -> ApiResponse[PageResponse[TeamDirectoryItem]]:
+    if q:
+        rate_limit_search(request)
     return ApiResponse(
         data=PlatformService(session).list_teams(
             query=q,

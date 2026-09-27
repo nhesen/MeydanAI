@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit_auth
 from app.core.security import parse_bearer_token, require_user
 from app.models.domain import User
 from app.schemas.auth import AuthCredentials, AuthSessionResponse, UserResponse
@@ -23,7 +24,9 @@ CurrentUser = Annotated[User, Depends(require_user)]
 def register(
     payload: AuthCredentials,
     session: DatabaseSession,
+    request: Request,
 ) -> ApiResponse[AuthSessionResponse]:
+    rate_limit_auth(request)
     return ApiResponse(data=AuthService(session).register(payload))
 
 
@@ -31,7 +34,9 @@ def register(
 def login(
     payload: AuthCredentials,
     session: DatabaseSession,
+    request: Request,
 ) -> ApiResponse[AuthSessionResponse]:
+    rate_limit_auth(request)
     return ApiResponse(data=AuthService(session).login(payload))
 
 

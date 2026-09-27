@@ -12,6 +12,23 @@ from app.core.exceptions import DomainError
 
 logger = logging.getLogger(__name__)
 
+HTTP_TITLES = {
+    400: ("Bad request", "BAD_REQUEST"),
+    401: ("Authentication required", "AUTHENTICATION_REQUIRED"),
+    403: ("Access denied", "ACCESS_DENIED"),
+    404: ("Resource not found", "RESOURCE_NOT_FOUND"),
+    409: ("Conflict", "CONFLICT"),
+    422: ("Validation failed", "VALIDATION_ERROR"),
+    429: ("Too many requests", "RATE_LIMITED"),
+    500: ("Internal server error", "INTERNAL_ERROR"),
+}
+
+
+def safe_request_path(path: str) -> str:
+    if path.startswith("/api/v1/join/"):
+        return "/api/v1/join/[token]"
+    return path
+
 
 def problem_response(
     request: Request,
@@ -27,7 +44,7 @@ def problem_response(
         "title": title,
         "status": status,
         "detail": detail,
-        "instance": request.url.path,
+        "instance": safe_request_path(request.url.path),
         "errorCode": error_code,
         "timestamp": datetime.now(UTC),
     }
@@ -74,8 +91,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exception: StarletteHTTPException,
     ) -> JSONResponse:
-        title = "Resource not found" if exception.status_code == 404 else "Request failed"
-        error_code = "RESOURCE_NOT_FOUND" if exception.status_code == 404 else "HTTP_ERROR"
+        title, error_code = HTTP_TITLES.get(
+            exception.status_code,
+            ("Request failed", "HTTP_ERROR"),
+        )
         return problem_response(
             request,
             status=exception.status_code,
@@ -86,7 +105,11 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unexpected_error_handler(request: Request, exception: Exception) -> JSONResponse:
-        logger.exception("Unhandled request failure for %s", request.url.path, exc_info=exception)
+        logger.exception(
+            "Unhandled request failure for %s",
+            safe_request_path(request.url.path),
+            exc_info=exception,
+        )
         return problem_response(
             request,
             status=500,

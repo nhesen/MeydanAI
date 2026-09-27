@@ -45,6 +45,7 @@ from app.schemas.matches import (
     TeamResponse,
     TimelineEventResponse,
 )
+from app.services.audit import AuditService
 
 
 def normalize_name(value: str) -> str:
@@ -324,6 +325,13 @@ class MatchService:
                 detail="Match end time must be after the start time.",
                 error_code="INVALID_MATCH_END_TIME",
             )
+        AuditService(self.session).record(
+            actor_user_id=user.id if user is not None else None,
+            action="match.update",
+            entity_type="match",
+            entity_id=str(match.id),
+            metadata={"status": payload.status, "via_token": organizer_token is not None},
+        )
         self.session.commit()
         return self.to_match_response(self._require_match(match.id))
 
@@ -455,6 +463,17 @@ class MatchService:
             override_at=effective_at if payload.override_conflict else None,
         )
         self.repository.add(replacement)
+        AuditService(self.session).record(
+            actor_user_id=user.id if user is not None else None,
+            action="assignment.correct",
+            entity_type="jersey_assignment",
+            entity_id=str(assignment.id),
+            metadata={
+                "override": payload.override_conflict,
+                "reason": payload.override_reason,
+                "actor_label": payload.override_actor,
+            },
+        )
         self._commit_assignment()
         return self.to_assignment_response(self._require_assignment(replacement.id))
 

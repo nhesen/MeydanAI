@@ -16,6 +16,7 @@ from app.schemas.admin import (
 from app.schemas.auth import UserResponse
 from app.schemas.platform import PageResponse, PlatformHighlightResponse
 from app.schemas.processing import ProcessingJobResponse
+from app.services.audit import AuditService
 from app.services.platform import PlatformService
 from app.services.processing import ProcessingService
 
@@ -27,6 +28,7 @@ class AdminService:
         self.processing_repository = ProcessingRepository(session)
         self.platform = PlatformService(session)
         self.processing = ProcessingService(session)
+        self.audit = AuditService(session)
 
     def dashboard(self) -> AdminDashboardResponse:
         recent = self.platform.list_matches(
@@ -72,7 +74,12 @@ class AdminService:
             total,
         )
 
-    def update_user_role(self, user_id: uuid.UUID, payload: UserRoleUpdate) -> UserResponse:
+    def update_user_role(
+        self,
+        user_id: uuid.UUID,
+        payload: UserRoleUpdate,
+        actor: User,
+    ) -> UserResponse:
         user = self.auth_repository.get_user(user_id)
         if user is None:
             raise DomainError(
@@ -92,7 +99,15 @@ class AdminService:
                 detail="The last administrator cannot be demoted.",
                 error_code="LAST_ADMIN_REQUIRED",
             )
+        previous_role = user.role
         user.role = payload.role
+        self.audit.record(
+            actor_user_id=actor.id,
+            action="user.role_change",
+            entity_type="user",
+            entity_id=str(user.id),
+            metadata={"from": previous_role, "to": payload.role},
+        )
         self.session.commit()
         return UserResponse.model_validate(user)
 
@@ -116,9 +131,18 @@ class AdminService:
         )
 
     def retry_job(self, job_id: uuid.UUID, user: User) -> ProcessingJobResponse:
-        return self.processing.retry_job(job_id, user=user)
+        result = self.processing.retry_job(job_id, user=user)
+        self.audit.record(
+            actor_user_id=user.id,
+            action="processing.retry",
+            entity_type="processing_job",
+            entity_id=str(job_id),
+            metadata={"retry_job_id": str(result.id)},
+            commit=True,
+        )
+        return result
 
-    def create_highlight(self, payload: HighlightWrite) -> PlatformHighlightResponse:
+    def create_highlight(self, payload: HighlightWrite, actor: User) -> PlatformHighlightResponse:
         match = self.session.get(Match, payload.match_id)
         if match is None:
             raise DomainError(
@@ -145,6 +169,14 @@ class AdminService:
             duration_ms=payload.duration_ms,
         )
         self.session.add(highlight)
+        self.session.flush()
+        self.audit.record(
+            actor_user_id=actor.id,
+            action="highlight.create",
+            entity_type="highlight",
+            entity_id=str(highlight.id),
+            metadata={"match_id": str(payload.match_id)},
+        )
         self.session.commit()
         return self._highlight_response(highlight)
 
@@ -152,6 +184,7 @@ class AdminService:
         self,
         highlight_id: uuid.UUID,
         payload: HighlightUpdate,
+        actor: User,
     ) -> PlatformHighlightResponse:
         highlight = self._require_highlight(highlight_id)
         if payload.player_id is not None and self.session.get(Player, payload.player_id) is None:
@@ -175,11 +208,23 @@ class AdminService:
             highlight.thumbnail_url = payload.thumbnail_url
         if payload.duration_ms is not None:
             highlight.duration_ms = payload.duration_ms
+        self.audit.record(
+            actor_user_id=actor.id,
+            action="highlight.update",
+            entity_type="highlight",
+            entity_id=str(highlight.id),
+        )
         self.session.commit()
         return self._highlight_response(highlight)
 
-    def delete_highlight(self, highlight_id: uuid.UUID) -> None:
+    def delete_highlight(self, highlight_id: uuid.UUID, actor: User) -> None:
         highlight = self._require_highlight(highlight_id)
+        self.audit.record(
+            actor_user_id=actor.id,
+            action="highlight.delete",
+            entity_type="highlight",
+            entity_id=str(highlight.id),
+        )
         self.session.delete(highlight)
         self.session.commit()
 
