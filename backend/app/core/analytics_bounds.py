@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Any, Protocol
 
 MAX_PLAYER_KMH = 36.0
@@ -162,7 +163,7 @@ def intensity_from_positions(samples: list[Any]) -> list[tuple[int, int, float]]
     if len(samples) < 2:
         return []
     buckets: dict[int, list[float]] = {}
-    for previous, current in zip(samples, samples[1:], strict=False):
+    for previous, current in pairwise(samples):
         minute = max(0, current.timestamp_ms) // 60_000
         buckets.setdefault(minute, []).append(_display_pace_kmh(previous, current))
     last_minute = max(buckets)
