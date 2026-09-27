@@ -80,8 +80,10 @@ Open `http://localhost:3000`. The API health contract is available at
 
 ## Configuration
 
-Frontend requires `NEXT_PUBLIC_API_URL`, the public absolute URL of the
-backend API.
+Frontend requires:
+
+- `NEXT_PUBLIC_API_URL`: public absolute URL of the backend API.
+- `NEXT_PUBLIC_APP_URL`: public frontend URL encoded into match join QR codes.
 
 Backend settings:
 
@@ -157,10 +159,22 @@ applied against the local Compose database before release.
   `errorCode`. Validation errors may include a field-level `errors` object.
 - Sensitive exception details and stack traces are never returned to clients.
 
+Match flow endpoints:
+
+- `POST /api/v1/matches` creates a match, teams and secure join/organizer tokens.
+- `GET /api/v1/join/{token}` validates a public join link.
+- `POST /api/v1/join/{token}/assignments` creates a player jersey assignment.
+- Organizer match and assignment endpoints require `X-Organizer-Token`.
+
+Raw capability tokens are returned only when created. Only SHA-256 hashes are
+stored. The temporary organizer token is kept in browser session storage and
+must be replaced by account-based authorization when authentication is added.
+
 ## Current limitations
 
-- Authentication, roles and domain APIs are intentionally not implemented.
-- Match, team, player and analytics database models belong to Prompt 3.
-- The current UI is a minimal foundation health screen, not the Prompt 2
-  redesign.
+- Account authentication and role-based authorization are not implemented.
+- Existing player discovery is intentionally limited and will move behind
+  authenticated search.
+- Organizer capability recovery across browsers is not available until auth.
+- Match analytics and player performance statistics are not implemented.
 - Background jobs, OpenCV and computer-vision models are intentionally absent.

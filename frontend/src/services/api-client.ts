@@ -1,5 +1,38 @@
 import { getApiBaseUrl } from "@/lib/env";
-import type { ApiProblem, ApiResponse, ServiceHealth } from "@/types/api";
+import type {
+  ApiProblem,
+  ApiResponse,
+  JerseyAssignment,
+  JoinContext,
+  MatchCreated,
+  MatchSummary,
+  ServiceHealth,
+} from "@/types/api";
+
+export interface CreateMatchInput {
+  venue_name: string;
+  starts_at: string;
+  expected_ends_at: string | null;
+  title: string | null;
+  team_a_name: string;
+  team_b_name: string;
+}
+
+export interface CreateAssignmentInput {
+  team_id: string;
+  player_id?: string;
+  display_name?: string;
+  jersey_number: number;
+}
+
+export interface CorrectAssignmentInput {
+  team_id?: string;
+  jersey_number?: number;
+  close_only?: boolean;
+  override_conflict?: boolean;
+  override_reason?: string;
+  override_actor?: string;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -39,5 +72,83 @@ async function request<T>(
 export const api = {
   getHealth(signal?: AbortSignal) {
     return request<ApiResponse<ServiceHealth>>("/api/v1/health", { signal });
+  },
+  createMatch(input: CreateMatchInput) {
+    return request<ApiResponse<MatchCreated>>("/api/v1/matches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  },
+  getJoinContext(token: string, signal?: AbortSignal) {
+    return request<ApiResponse<JoinContext>>(
+      `/api/v1/join/${encodeURIComponent(token)}`,
+      { signal },
+    );
+  },
+  createAssignment(token: string, input: CreateAssignmentInput) {
+    return request<ApiResponse<JerseyAssignment>>(
+      `/api/v1/join/${encodeURIComponent(token)}/assignments`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    );
+  },
+  getMatch(matchId: string, organizerToken: string, signal?: AbortSignal) {
+    return request<ApiResponse<MatchSummary>>(`/api/v1/matches/${matchId}`, {
+      signal,
+      headers: { "X-Organizer-Token": organizerToken },
+    });
+  },
+  getAssignments(
+    matchId: string,
+    organizerToken: string,
+    signal?: AbortSignal,
+  ) {
+    return request<ApiResponse<JerseyAssignment[]>>(
+      `/api/v1/matches/${matchId}/assignments`,
+      {
+        signal,
+        headers: { "X-Organizer-Token": organizerToken },
+      },
+    );
+  },
+  correctAssignment(
+    matchId: string,
+    assignmentId: string,
+    organizerToken: string,
+    input: CorrectAssignmentInput,
+  ) {
+    return request<ApiResponse<JerseyAssignment>>(
+      `/api/v1/matches/${matchId}/assignments/${assignmentId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Organizer-Token": organizerToken,
+        },
+        body: JSON.stringify(input),
+      },
+    );
+  },
+  changeJersey(
+    matchId: string,
+    assignmentId: string,
+    organizerToken: string,
+    input: CorrectAssignmentInput,
+  ) {
+    return request<ApiResponse<JerseyAssignment>>(
+      `/api/v1/matches/${matchId}/assignments/${assignmentId}/change-jersey`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Organizer-Token": organizerToken,
+        },
+        body: JSON.stringify(input),
+      },
+    );
   },
 };

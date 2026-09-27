@@ -22,3 +22,17 @@ export function getApiBaseUrl(): string {
 
   return url.toString().replace(/\/$/, "");
 }
+
+export function getAppBaseUrl(): string {
+  const rawValue = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (!rawValue) {
+    throw new Error(
+      "NEXT_PUBLIC_APP_URL is required. Copy .env.example to .env.local.",
+    );
+  }
+  const url = new URL(rawValue);
+  if (!HTTP_PROTOCOLS.has(url.protocol)) {
+    throw new Error("NEXT_PUBLIC_APP_URL must use HTTP or HTTPS.");
+  }
+  return url.toString().replace(/\/$/, "");
+}
