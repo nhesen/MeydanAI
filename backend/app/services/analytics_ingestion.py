@@ -7,6 +7,12 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.analytics_bounds import (
+    sanitize_events,
+    sanitize_intensity,
+    sanitize_player_metrics,
+    sanitize_positions,
+)
 from app.core.exceptions import DomainError
 from app.core.processing import ProcessingStage, ProcessingStatus
 from app.models.domain import (
@@ -42,6 +48,32 @@ class AnalyticsIngestionService:
         idempotency_key: str,
         payload: PlayerAnalyticsIngest,
     ) -> AnalyticsIngestionResponse:
+        payload.positions = sanitize_positions(list(payload.positions))
+        payload.intensity = sanitize_intensity(
+            list(payload.intensity),
+            raw_max_speed_kmh=payload.metrics.max_speed_kmh,
+        )
+        payload.events = sanitize_events(list(payload.events))
+        cleaned = sanitize_player_metrics(
+            rating=payload.metrics.rating,
+            distance_m=payload.metrics.distance_m,
+            avg_speed_kmh=payload.metrics.avg_speed_kmh,
+            max_speed_kmh=payload.metrics.max_speed_kmh,
+            sprint_count=payload.metrics.sprint_count,
+            active_seconds=payload.metrics.active_seconds,
+            activity_count=payload.metrics.activity_count,
+            peak_speed_at_ms=payload.metrics.peak_speed_at_ms,
+            event_sprint_count=sum(1 for event in payload.events if event.event_type == "sprint")
+            or None,
+        )
+        payload.metrics.rating = cleaned.rating
+        payload.metrics.distance_m = cleaned.distance_m
+        payload.metrics.avg_speed_kmh = cleaned.avg_speed_kmh
+        payload.metrics.max_speed_kmh = cleaned.max_speed_kmh
+        payload.metrics.sprint_count = cleaned.sprint_count
+        payload.metrics.active_seconds = cleaned.active_seconds
+        payload.metrics.activity_count = cleaned.activity_count
+        payload.metrics.peak_speed_at_ms = cleaned.peak_speed_at_ms
         if len(payload.positions) > self.max_position_samples:
             raise DomainError(
                 status=413,

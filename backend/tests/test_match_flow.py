@@ -315,6 +315,84 @@ def test_player_analytics_detail_returns_persisted_data(session: Session) -> Non
     assert detail.events[0].speed_kmh == 24.8
 
 
+def test_inflated_motion_analytics_are_clamped_for_display(session: Session) -> None:
+    service = MatchService(session)
+    start = datetime.now(UTC) + timedelta(hours=1)
+    created = service.create_match(
+        MatchCreate(
+            venue_name="Clamp venue",
+            starts_at=start,
+            expected_ends_at=start + timedelta(hours=1),
+            team_a_name="Home",
+            team_b_name="Away",
+        )
+    )
+    assignment = service.join_match(
+        created.join_token,
+        AssignmentCreate(
+            team_id=created.match.teams[0].id,
+            display_name="Detected away 1",
+            jersey_number=1,
+        ),
+    )
+    analytics = PlayerMatchAnalytics(
+        match_id=created.match.id,
+        player_id=assignment.player.id,
+        team_id=assignment.team.id,
+        status="available",
+        rating=6.6,
+        distance_m=284,
+        avg_speed_kmh=18.7,
+        max_speed_kmh=198.0,
+        sprint_count=51,
+        active_seconds=53,
+        activity_count=223,
+        peak_speed_at_ms=48000,
+    )
+    analytics.position_samples = [
+        PlayerPositionSample(timestamp_ms=0, x=0.20, y=0.50),
+        PlayerPositionSample(timestamp_ms=250, x=0.21, y=0.50),
+        PlayerPositionSample(timestamp_ms=500, x=0.80, y=0.50),
+    ]
+    analytics.intensity_buckets = [PlayerIntensityBucket(from_minute=0, to_minute=1, intensity=100)]
+    analytics.events = [
+        PlayerAnalyticsEvent(
+            event_type="sprint",
+            timestamp_ms=6000,
+            speed_kmh=26.1,
+            title="Sprint",
+        ),
+        PlayerAnalyticsEvent(
+            event_type="sprint",
+            timestamp_ms=10000,
+            speed_kmh=106.9,
+            title="Sprint",
+        ),
+        PlayerAnalyticsEvent(
+            event_type="peak_speed",
+            timestamp_ms=48000,
+            speed_kmh=198.0,
+            title="Peak recorded speed",
+        ),
+    ]
+    session.add(analytics)
+    session.commit()
+
+    detail = service.get_player_analytics_detail(created.match.id, assignment.player.id)
+    assert detail.player.max_speed_kmh == 36.0
+    assert detail.player.avg_speed_kmh == 12.0
+    assert detail.player.sprint_count is not None and detail.player.sprint_count <= 4
+    assert detail.player.distance_m is not None and detail.player.distance_m <= 177
+    assert all(event.speed_kmh is None or event.speed_kmh <= 36 for event in detail.events)
+    assert all(
+        event.event_type != "sprint" or (event.speed_kmh or 0) <= 40 for event in detail.events
+    )
+    xs = [sample.x for sample in detail.position_samples]
+    assert len(detail.position_samples) >= 8
+    assert max(xs) - min(xs) > 0.3
+    assert 10 <= detail.intensity_buckets[0].intensity < 100
+
+
 def test_player_analytics_rejects_player_not_in_match(session: Session) -> None:
     service = MatchService(session)
     first = service.create_match(match_payload("first"))

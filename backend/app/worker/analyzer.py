@@ -7,13 +7,18 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-PITCH_LENGTH_M = 105.0
-PITCH_WIDTH_M = 68.0
-MAX_PLAYER_KMH = 36.0
-MAX_PLAUSIBLE_STEP_KMH = 40.0
-MAX_AVG_KMH = 16.0
-SPRINT_KMH = 24.0
-STANDING_KMH = 1.2
+from app.core.analytics_bounds import (
+    MAX_AVG_KMH,
+    MAX_PLAUSIBLE_STEP_KMH,
+    MAX_PLAYER_KMH,
+    PITCH_LENGTH_M,
+    PITCH_WIDTH_M,
+    SPRINT_KMH,
+    STANDING_KMH,
+    intensity_from_positions,
+    reconstruct_display_path,
+)
+
 MAX_POSITION_SAMPLES = 2500
 
 
@@ -180,7 +185,9 @@ def _downscale(frame: np.ndarray) -> np.ndarray:
 
 
 def _metrics_for_track(track: MotionTrack, width: int, height: int) -> PlayerMotionResult:
-    samples = _plausible_path(_downsample(track.samples))
+    raw_samples = _downsample(track.samples)
+    display = reconstruct_display_path(raw_samples)
+    samples = _smooth_path(_plausible_path(raw_samples))
     distance_m = 0.0
     speeds: list[tuple[int, float]] = []
     for previous, current in pairwise(samples):
@@ -192,35 +199,35 @@ def _metrics_for_track(track: MotionTrack, width: int, height: int) -> PlayerMot
         distance_m += (speed / 3.6) * dt
         speeds.append((current.timestamp_ms, speed))
 
-    max_speed = min(max((speed for _, speed in speeds), default=0.0), MAX_PLAYER_KMH)
-    avg_speed = min(
-        (sum(speed for _, speed in speeds) / len(speeds)) if speeds else 0.0,
-        MAX_AVG_KMH,
-    )
-    sprint_count = _sprint_bursts(speeds)
     duration_ms = (samples[-1].timestamp_ms - samples[0].timestamp_ms) if len(samples) > 1 else 0
+    duration_s = max(duration_ms / 1000, 1.0)
+    max_speed = min(max((speed for _, speed in speeds), default=0.0), MAX_PLAYER_KMH)
+    avg_speed = min((distance_m / duration_s) * 3.6, MAX_AVG_KMH)
+    sprint_count = _sprint_bursts(speeds)
     peak_at = next((stamp for stamp, speed in speeds if speed == max_speed), None)
-    intensity = _intensity_buckets(speeds, duration_ms)
+    intensity = intensity_from_positions(display) or _intensity_buckets(speeds, duration_ms)
     events: list[tuple[str, int, float | None, str]] = []
     if peak_at is not None and max_speed > 0:
         events.append(("peak_speed", peak_at, round(max_speed, 1), "Peak recorded speed"))
-    for stamp, speed in speeds:
-        if speed >= SPRINT_KMH and len(events) < 8:
-            events.append(("sprint", stamp, round(speed, 1), "Sprint"))
+    events.extend(_sprint_events(speeds))
 
-    rating = min(
-        9.6,
-        round(
-            5.0
-            + min(2.4, distance_m / 90)
-            + min(1.6, max(0.0, max_speed - 16) / 12)
-            + min(1.2, sprint_count / 3),
-            1,
+    meters_per_minute = distance_m / (duration_s / 60)
+    rating = max(
+        4.2,
+        min(
+            9.4,
+            round(
+                5.0
+                + min(2.0, meters_per_minute / 70)
+                + min(1.4, max(0.0, max_speed - 18) / 12)
+                + min(1.0, sprint_count / 4),
+                1,
+            ),
         ),
     )
     return PlayerMotionResult(
         track_id=track.track_id,
-        positions=samples,
+        positions=display or samples,
         rating=rating,
         distance_m=round(distance_m, 1),
         avg_speed_kmh=round(avg_speed, 1),
@@ -252,6 +259,41 @@ def _plausible_path(samples: list[TrackSample]) -> list[TrackSample]:
         if _step_kmh(previous, sample, dt) <= MAX_PLAUSIBLE_STEP_KMH:
             kept.append(sample)
     return kept
+
+
+def _smooth_path(samples: list[TrackSample]) -> list[TrackSample]:
+    if len(samples) < 3:
+        return samples
+    smoothed = [samples[0]]
+    for index in range(1, len(samples) - 1):
+        window = samples[index - 1 : index + 2]
+        smoothed.append(
+            TrackSample(
+                timestamp_ms=samples[index].timestamp_ms,
+                x=sum(item.x for item in window) / len(window),
+                y=sum(item.y for item in window) / len(window),
+            )
+        )
+    smoothed.append(samples[-1])
+    return smoothed
+
+
+def _sprint_events(
+    speeds: list[tuple[int, float]],
+    limit: int = 8,
+) -> list[tuple[str, int, float | None, str]]:
+    events: list[tuple[str, int, float | None, str]] = []
+    in_burst = False
+    for stamp, speed in speeds:
+        if speed < SPRINT_KMH:
+            in_burst = False
+            continue
+        if in_burst:
+            continue
+        in_burst = True
+        if len(events) < limit:
+            events.append(("sprint", stamp, round(speed, 1), "Sprint"))
+    return events
 
 
 def _sprint_bursts(speeds: list[tuple[int, float]]) -> int:

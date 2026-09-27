@@ -16,9 +16,11 @@ interface DensityPoint {
   intensity: number;
 }
 
-const COLUMN_COUNT = 12;
-const ROW_COUNT = 8;
+const COLUMN_COUNT = 20;
+const ROW_COUNT = 12;
 const MAX_SAMPLES_FOR_DENSITY = 2500;
+const NEIGHBOR_WEIGHT = 0.35;
+const DIAGONAL_WEIGHT = 0.16;
 
 export function PlayerHeatmap({
   processing = false,
@@ -44,8 +46,8 @@ export function PlayerHeatmap({
           viewBox="0 0 100 64"
         >
           <defs>
-            <filter id="heat-blur" x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="3.5" />
+            <filter id="heat-blur" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="4.2" />
             </filter>
           </defs>
           <rect width="100" height="64" fill="#dcebe0" />
@@ -73,8 +75,8 @@ export function PlayerHeatmap({
                 cy={point.y}
                 fill={heatColor(point.intensity)}
                 key={`${point.x}-${point.y}`}
-                opacity={0.3 + point.intensity * 0.55}
-                r={3.5 + point.intensity * 5.5}
+                opacity={0.22 + point.intensity * 0.5}
+                r={4.2 + point.intensity * 6.2}
               />
             ))}
           </g>
@@ -126,7 +128,13 @@ function downsampleSamples(samples: PositionSample[]): PositionSample[] {
 }
 
 function createDensity(samples: PositionSample[]): DensityPoint[] {
-  const buckets = new Map<string, { column: number; row: number; count: number }>();
+  const grid = Array.from({ length: COLUMN_COUNT }, () =>
+    Array.from({ length: ROW_COUNT }, () => 0),
+  );
+  const rawCounts = Array.from({ length: COLUMN_COUNT }, () =>
+    Array.from({ length: ROW_COUNT }, () => 0),
+  );
+
   for (const sample of downsampleSamples(samples)) {
     const column = Math.min(
       COLUMN_COUNT - 1,
@@ -136,18 +144,58 @@ function createDensity(samples: PositionSample[]): DensityPoint[] {
       ROW_COUNT - 1,
       Math.max(0, Math.floor(sample.y * ROW_COUNT)),
     );
-    const key = `${column}-${row}`;
-    const bucket = buckets.get(key);
-    if (bucket) bucket.count += 1;
-    else buckets.set(key, { column, row, count: 1 });
+    rawCounts[column][row] += 1;
+    addKernel(grid, column, row, 1);
   }
-  const highestCount = Math.max(1, ...Array.from(buckets.values(), (item) => item.count));
-  return Array.from(buckets.values(), (bucket) => ({
-    x: ((bucket.column + 0.5) / COLUMN_COUNT) * 96 + 2,
-    y: ((bucket.row + 0.5) / ROW_COUNT) * 60 + 2,
-    count: bucket.count,
-    intensity: bucket.count / highestCount,
+
+  const points: DensityPoint[] = [];
+  let highest = 0;
+  for (let column = 0; column < COLUMN_COUNT; column += 1) {
+    for (let row = 0; row < ROW_COUNT; row += 1) {
+      const value = grid[column][row];
+      if (value <= 0) continue;
+      highest = Math.max(highest, value);
+      points.push({
+        x: ((column + 0.5) / COLUMN_COUNT) * 96 + 2,
+        y: ((row + 0.5) / ROW_COUNT) * 60 + 2,
+        count: Math.max(1, rawCounts[column][row] || Math.round(value)),
+        intensity: value,
+      });
+    }
+  }
+  return points.map((point) => ({
+    ...point,
+    intensity: point.intensity / Math.max(highest, 1),
   }));
+}
+
+function addKernel(
+  grid: number[][],
+  column: number,
+  row: number,
+  weight: number,
+) {
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      const nextColumn = column + dx;
+      const nextRow = row + dy;
+      if (
+        nextColumn < 0 ||
+        nextColumn >= COLUMN_COUNT ||
+        nextRow < 0 ||
+        nextRow >= ROW_COUNT
+      ) {
+        continue;
+      }
+      const spread =
+        dx === 0 && dy === 0
+          ? weight
+          : dx === 0 || dy === 0
+            ? weight * NEIGHBOR_WEIGHT
+            : weight * DIAGONAL_WEIGHT;
+      grid[nextColumn][nextRow] += spread;
+    }
+  }
 }
 
 function heatColor(intensity: number): string {

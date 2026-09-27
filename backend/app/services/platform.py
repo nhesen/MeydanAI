@@ -5,6 +5,7 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
+from app.core.analytics_bounds import MAX_AVG_KMH, clamp_speed, sanitize_player_metrics
 from app.core.exceptions import DomainError
 from app.models.domain import (
     Highlight,
@@ -208,7 +209,7 @@ class PlatformService:
                     player_id=row[0],
                     display_name=row[1],
                     match_count=row[2],
-                    value=float(cast(float, row[index])),
+                    value=PlatformService._leaderboard_value(index, float(cast(float, row[index]))),
                 )
                 for row in available[:10]
             ]
@@ -228,8 +229,10 @@ class PlatformService:
                     team_name=row[1],
                     match_count=row[2],
                     total_distance_m=row[3],
-                    average_speed_kmh=row[4],
-                    maximum_speed_kmh=row[5],
+                    average_speed_kmh=clamp_speed(row[4], MAX_AVG_KMH)
+                    if row[4] is not None
+                    else None,
+                    maximum_speed_kmh=clamp_speed(row[5]) if row[5] is not None else None,
                     sprint_count=row[6],
                 )
                 for row in team_rows
@@ -333,18 +336,42 @@ class PlatformService:
         team: Team,
         analytics: PlayerMatchAnalytics | None,
     ) -> PlayerPerformanceSummary:
+        if analytics is None:
+            return PlayerPerformanceSummary(
+                match_id=match.id,
+                match_title=match.title,
+                venue_name=match.venue_name,
+                starts_at=match.starts_at,
+                team=TeamResponse(id=team.id, name=team.name),
+                rating=None,
+                distance_m=None,
+                avg_speed_kmh=None,
+                max_speed_kmh=None,
+                sprint_count=None,
+                active_seconds=None,
+            )
+        metrics = sanitize_player_metrics(
+            rating=analytics.rating,
+            distance_m=analytics.distance_m,
+            avg_speed_kmh=analytics.avg_speed_kmh,
+            max_speed_kmh=analytics.max_speed_kmh,
+            sprint_count=analytics.sprint_count,
+            active_seconds=analytics.active_seconds,
+            activity_count=analytics.activity_count,
+            peak_speed_at_ms=analytics.peak_speed_at_ms,
+        )
         return PlayerPerformanceSummary(
             match_id=match.id,
             match_title=match.title,
             venue_name=match.venue_name,
             starts_at=match.starts_at,
             team=TeamResponse(id=team.id, name=team.name),
-            rating=analytics.rating if analytics else None,
-            distance_m=analytics.distance_m if analytics else None,
-            avg_speed_kmh=analytics.avg_speed_kmh if analytics else None,
-            max_speed_kmh=analytics.max_speed_kmh if analytics else None,
-            sprint_count=analytics.sprint_count if analytics else None,
-            active_seconds=analytics.active_seconds if analytics else None,
+            rating=metrics.rating,
+            distance_m=metrics.distance_m,
+            avg_speed_kmh=metrics.avg_speed_kmh,
+            max_speed_kmh=metrics.max_speed_kmh,
+            sprint_count=metrics.sprint_count,
+            active_seconds=metrics.active_seconds,
         )
 
     @staticmethod
@@ -367,6 +394,13 @@ class PlatformService:
             duration_ms=highlight.duration_ms,
             created_at=highlight.created_at,
         )
+
+    @staticmethod
+    def _leaderboard_value(index: int, raw: float) -> float:
+        if index == 5:
+            capped = clamp_speed(raw)
+            return capped if capped is not None else raw
+        return raw
 
     @staticmethod
     def _page[T](

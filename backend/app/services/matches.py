@@ -7,6 +7,15 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.analytics_bounds import (
+    MAX_PLAUSIBLE_STEP_KMH,
+    SPRINT_KMH,
+    intensity_from_positions,
+    reconstruct_display_path,
+    sanitize_events,
+    sanitize_intensity,
+    sanitize_player_metrics,
+)
 from app.core.exceptions import DomainError
 from app.core.security import access_denied, authentication_required, is_admin, owns_match
 from app.core.tokens import aware, create_token, hash_token
@@ -239,26 +248,8 @@ class MatchService:
                 intensity_buckets=[],
                 events=[],
             )
-        return PlayerAnalyticsDetailResponse(
-            match=detail.match,
-            player=player,
-            position_samples=[
-                PositionSampleResponse(
-                    timestamp_ms=sample.timestamp_ms,
-                    x=sample.x,
-                    y=sample.y,
-                )
-                for sample in analytics.position_samples
-            ],
-            intensity_buckets=[
-                IntensityBucketResponse(
-                    from_minute=bucket.from_minute,
-                    to_minute=bucket.to_minute,
-                    intensity=bucket.intensity,
-                )
-                for bucket in analytics.intensity_buckets
-            ],
-            events=[
+        events = sanitize_events(
+            [
                 PlayerAnalyticsEventResponse(
                     id=event.id,
                     event_type=cast(
@@ -275,7 +266,46 @@ class MatchService:
                     title=event.title,
                 )
                 for event in analytics.events
-            ],
+            ]
+        )
+        position_samples = reconstruct_display_path(
+            [
+                PositionSampleResponse(
+                    timestamp_ms=sample.timestamp_ms,
+                    x=sample.x,
+                    y=sample.y,
+                )
+                for sample in analytics.position_samples
+            ]
+        )
+        rebuilt_intensity = intensity_from_positions(position_samples)
+        if rebuilt_intensity:
+            intensity_buckets = [
+                IntensityBucketResponse(
+                    from_minute=from_minute,
+                    to_minute=to_minute,
+                    intensity=intensity,
+                )
+                for from_minute, to_minute, intensity in rebuilt_intensity
+            ]
+        else:
+            intensity_buckets = sanitize_intensity(
+                [
+                    IntensityBucketResponse(
+                        from_minute=bucket.from_minute,
+                        to_minute=bucket.to_minute,
+                        intensity=bucket.intensity,
+                    )
+                    for bucket in analytics.intensity_buckets
+                ],
+                raw_max_speed_kmh=analytics.max_speed_kmh,
+            )
+        return PlayerAnalyticsDetailResponse(
+            match=detail.match,
+            player=player,
+            position_samples=position_samples,
+            intensity_buckets=intensity_buckets,
+            events=events,
         )
 
     def compare_players(
@@ -631,15 +661,39 @@ class MatchService:
         player: MatchPlayerResponse,
         analytics: PlayerMatchAnalytics,
     ) -> None:
-        player.rating = analytics.rating
-        player.distance_m = analytics.distance_m
-        player.avg_speed_kmh = analytics.avg_speed_kmh
-        player.max_speed_kmh = analytics.max_speed_kmh
-        player.sprint_count = analytics.sprint_count
-        player.active_seconds = analytics.active_seconds
-        player.activity_count = analytics.activity_count
-        player.peak_speed_at_ms = analytics.peak_speed_at_ms
+        event_sprints = MatchService._plausible_sprint_count(list(analytics.events))
+        metrics = sanitize_player_metrics(
+            rating=analytics.rating,
+            distance_m=analytics.distance_m,
+            avg_speed_kmh=analytics.avg_speed_kmh,
+            max_speed_kmh=analytics.max_speed_kmh,
+            sprint_count=analytics.sprint_count,
+            active_seconds=analytics.active_seconds,
+            activity_count=analytics.activity_count,
+            peak_speed_at_ms=analytics.peak_speed_at_ms,
+            event_sprint_count=event_sprints or None,
+        )
+        player.rating = metrics.rating
+        player.distance_m = metrics.distance_m
+        player.avg_speed_kmh = metrics.avg_speed_kmh
+        player.max_speed_kmh = metrics.max_speed_kmh
+        player.sprint_count = metrics.sprint_count
+        player.active_seconds = metrics.active_seconds
+        player.activity_count = metrics.activity_count
+        player.peak_speed_at_ms = metrics.peak_speed_at_ms
         player.analytics_status = cast(AnalyticsStatus, analytics.status)
+
+    @staticmethod
+    def _plausible_sprint_count(events: list[object]) -> int | None:
+        count = 0
+        for event in events:
+            speed = getattr(event, "speed_kmh", None)
+            if getattr(event, "event_type", None) != "sprint":
+                continue
+            if speed is None or speed < SPRINT_KMH or speed > MAX_PLAUSIBLE_STEP_KMH:
+                continue
+            count += 1
+        return count or None
 
     @staticmethod
     def _not_found(detail: str, code: str) -> DomainError:

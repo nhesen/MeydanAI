@@ -96,7 +96,9 @@ class MatchRepository:
     def list_player_analytics(self, match_id: uuid.UUID) -> list[PlayerMatchAnalytics]:
         return list(
             self.session.scalars(
-                select(PlayerMatchAnalytics).where(PlayerMatchAnalytics.match_id == match_id)
+                select(PlayerMatchAnalytics)
+                .where(PlayerMatchAnalytics.match_id == match_id)
+                .options(selectinload(PlayerMatchAnalytics.events))
             )
         )
 
