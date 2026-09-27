@@ -162,6 +162,8 @@ applied against the local Compose database before release.
 Match flow endpoints:
 
 - `POST /api/v1/matches` creates a match, teams and secure join/organizer tokens.
+- `GET /api/v1/public/matches/{id}` returns the public match-detail aggregate.
+- `PATCH /api/v1/matches/{id}` updates score and lifecycle state for organizers.
 - `GET /api/v1/join/{token}` validates a public join link.
 - `POST /api/v1/join/{token}/assignments` creates a player jersey assignment.
 - Organizer match and assignment endpoints require `X-Organizer-Token`.

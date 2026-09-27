@@ -164,9 +164,9 @@ export function JoinMatchWizard({ token }: JoinMatchWizardProps) {
           </div>
           <Link
             className="mt-7 inline-flex h-11 items-center justify-center rounded-xl border border-border bg-surface px-4 text-sm font-semibold text-slate-800 hover:bg-subtle"
-            href="/"
+            href={`/matches/${assignment.match_id}`}
           >
-            Back to MeydanAI
+            View match
           </Link>
         </Card>
       </div>

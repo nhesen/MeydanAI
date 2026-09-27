@@ -29,6 +29,10 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   const [organizerToken, setOrganizerToken] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState("");
   const [match, setMatch] = useState<MatchSummary | null>(null);
+  const [statusValue, setStatusValue] =
+    useState<MatchSummary["status"]>("scheduled");
+  const [homeScore, setHomeScore] = useState("");
+  const [awayScore, setAwayScore] = useState("");
   const [assignments, setAssignments] = useState<JerseyAssignment[]>([]);
   const [edits, setEdits] = useState<Record<string, EditState>>({});
   const [loading, setLoading] = useState(true);
@@ -42,6 +46,17 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
       api.getAssignments(matchId, token, signal),
     ]);
     setMatch(matchResponse.data);
+    setStatusValue(matchResponse.data.status);
+    setHomeScore(
+      matchResponse.data.home_score === null
+        ? ""
+        : String(matchResponse.data.home_score),
+    );
+    setAwayScore(
+      matchResponse.data.away_score === null
+        ? ""
+        : String(matchResponse.data.away_score),
+    );
     setAssignments(assignmentResponse.data);
     setEdits(
       Object.fromEntries(
@@ -156,6 +171,24 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
+  async function saveMatchState() {
+    if (!organizerToken) return;
+    setBusyId("match-state");
+    setError(null);
+    try {
+      const response = await api.updateMatchState(matchId, organizerToken, {
+        status: statusValue,
+        home_score: homeScore === "" ? null : Number(homeScore),
+        away_score: awayScore === "" ? null : Number(awayScore),
+      });
+      setMatch(response.data);
+    } catch {
+      setError("The score and match status could not be updated.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (loading) {
     return <LoadingSkeleton lines={6} label="Loading match management" />;
   }
@@ -180,6 +213,58 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   return (
     <div className="space-y-5">
       {error ? <ErrorState compact message={error} title="Action failed" /> : null}
+      {match ? (
+        <Card>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-semibold text-slate-950">Score & status</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Keep the public match page accurate during and after play.
+              </p>
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_4rem_4rem] gap-2 sm:w-auto">
+              <select
+                aria-label="Match status"
+                className="h-11 min-w-0 rounded-xl border border-border bg-surface px-3 text-sm"
+                onChange={(event) =>
+                  setStatusValue(event.target.value as MatchSummary["status"])
+                }
+                value={statusValue}
+              >
+                <option value="scheduled">Scheduled</option>
+                <option value="live">Live</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <Input
+                aria-label={`${match.teams[0]?.name ?? "Home"} score`}
+                min={0}
+                onChange={(event) => setHomeScore(event.target.value)}
+                placeholder="—"
+                type="number"
+                value={homeScore}
+              />
+              <Input
+                aria-label={`${match.teams[1]?.name ?? "Away"} score`}
+                min={0}
+                onChange={(event) => setAwayScore(event.target.value)}
+                placeholder="—"
+                type="number"
+                value={awayScore}
+              />
+            </div>
+            <Button
+              loading={busyId === "match-state"}
+              onClick={saveMatchState}
+              size="sm"
+            >
+              Save
+            </Button>
+          </div>
+        </Card>
+      ) : null}
       {joinUrl ? (
         <Card className="grid items-center gap-5 sm:grid-cols-[1fr_auto]">
           <div className="min-w-0">

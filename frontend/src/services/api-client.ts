@@ -5,6 +5,7 @@ import type {
   JerseyAssignment,
   JoinContext,
   MatchCreated,
+  MatchDetail,
   MatchSummary,
   ServiceHealth,
 } from "@/types/api";
@@ -32,6 +33,13 @@ export interface CorrectAssignmentInput {
   override_conflict?: boolean;
   override_reason?: string;
   override_actor?: string;
+}
+
+export interface UpdateMatchStateInput {
+  status: MatchSummary["status"];
+  home_score: number | null;
+  away_score: number | null;
+  ended_at?: string | null;
 }
 
 export class ApiError extends Error {
@@ -100,6 +108,26 @@ export const api = {
     return request<ApiResponse<MatchSummary>>(`/api/v1/matches/${matchId}`, {
       signal,
       headers: { "X-Organizer-Token": organizerToken },
+    });
+  },
+  getPublicMatchDetail(matchId: string, signal?: AbortSignal) {
+    return request<ApiResponse<MatchDetail>>(
+      `/api/v1/public/matches/${matchId}`,
+      { signal },
+    );
+  },
+  updateMatchState(
+    matchId: string,
+    organizerToken: string,
+    input: UpdateMatchStateInput,
+  ) {
+    return request<ApiResponse<MatchSummary>>(`/api/v1/matches/${matchId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Organizer-Token": organizerToken,
+      },
+      body: JSON.stringify(input),
     });
   },
   getAssignments(
