@@ -24,3 +24,14 @@ def test_settings_reject_non_postgresql_database() -> None:
             database_url="sqlite:///local.db",
             cors_allowed_origins="http://localhost:3000",
         )
+
+
+def test_processing_settings_disable_empty_worker_token() -> None:
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql+psycopg://user:pass@localhost:5432/meydanai",
+        cors_allowed_origins="http://localhost:3000",
+        internal_worker_token=" ",
+    )
+
+    assert settings.internal_worker_token is None

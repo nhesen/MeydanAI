@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -106,6 +107,67 @@ class MatchTeam(Base):
 
     match: Mapped[Match] = relationship(back_populates="teams")
     team: Mapped[Team] = relationship()
+
+
+class ProcessingJob(Base):
+    __tablename__ = "processing_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'processing', 'completed', 'failed', 'cancelled')",
+            name="ck_processing_jobs_status",
+        ),
+        CheckConstraint(
+            "stage IN ('queued', 'uploading', 'validating', 'preprocessing', "
+            "'detecting_players', 'tracking_players', 'calibrating_field', "
+            "'calculating_metrics', 'persisting_results', 'completed')",
+            name="ck_processing_jobs_stage",
+        ),
+        CheckConstraint(
+            "progress IS NULL OR (progress >= 0 AND progress <= 100)",
+            name="ck_processing_jobs_progress",
+        ),
+        CheckConstraint(
+            "source_type IN ('uploaded_video')",
+            name="ck_processing_jobs_source_type",
+        ),
+        CheckConstraint(
+            "source_size_bytes > 0",
+            name="ck_processing_jobs_source_size",
+        ),
+        Index(
+            "ix_processing_jobs_match_status_created",
+            "match_id",
+            "status",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    match_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("matches.id", ondelete="CASCADE"), index=True
+    )
+    retry_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("processing_jobs.id", ondelete="SET NULL"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    progress: Mapped[int | None] = mapped_column(Integer)
+    stage: Mapped[str] = mapped_column(String(40), default="queued")
+    source_type: Mapped[str] = mapped_column(String(30))
+    source_reference: Mapped[str] = mapped_column(String(500))
+    source_media_type: Mapped[str] = mapped_column(String(100))
+    source_size_bytes: Mapped[int] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(50))
+    provider_run_id: Mapped[str | None] = mapped_column(String(200))
+    calibration_metadata: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    match: Mapped[Match] = relationship()
+    retry_of: Mapped["ProcessingJob | None"] = relationship(remote_side=[id])
 
 
 class MatchJoinToken(Base):

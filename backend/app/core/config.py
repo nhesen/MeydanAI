@@ -1,8 +1,9 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,11 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: str
     cors_allowed_origins: str
+    analytics_provider: Literal["external"] = "external"
+    max_video_upload_size: int = Field(default=524_288_000, gt=0)
+    video_storage_path: Path = Path("./var/videos")
+    raw_video_retention_days: int = Field(default=30, ge=1)
+    internal_worker_token: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -43,6 +49,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return self.cors_allowed_origins.split(",")
+
+    @field_validator("internal_worker_token")
+    @classmethod
+    def normalize_worker_token(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 @lru_cache
