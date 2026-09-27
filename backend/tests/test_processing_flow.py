@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +16,7 @@ from app.schemas.matches import MatchCreate
 from app.schemas.processing import ProcessingJobStateUpdate
 from app.services.matches import MatchService
 from app.services.processing import ProcessingService
+from app.services.video_storage import LocalVideoStorage
 
 
 @pytest.fixture
@@ -183,3 +185,52 @@ def test_processing_progress_validation() -> None:
             stage=ProcessingStage.TRACKING_PLAYERS,
             progress=101,
         )
+
+
+def test_local_video_storage_validates_and_sanitizes_upload(
+    tmp_path,
+) -> None:
+    storage = LocalVideoStorage(tmp_path)
+    content = b"\x00\x00\x00\x18ftypisom" + b"video-data"
+
+    stored = storage.store(
+        BytesIO(content),
+        original_filename="../../unsafe.mp4",
+        media_type="video/mp4",
+        max_size_bytes=1024,
+    )
+
+    assert stored.reference.endswith(".mp4")
+    assert "/" not in stored.reference
+    assert "\\" not in stored.reference
+    assert (tmp_path / stored.reference).read_bytes() == content
+
+
+@pytest.mark.parametrize(
+    ("content", "filename", "media_type", "max_size"),
+    [
+        (b"", "empty.mp4", "video/mp4", 1024),
+        (b"not-a-video", "invalid.mp4", "video/mp4", 1024),
+        (b"\x1a\x45\xdf\xa3payload", "video.mp4", "video/webm", 1024),
+        (b"\x00\x00\x00\x18ftypisom", "large.mp4", "video/mp4", 4),
+    ],
+)
+def test_local_video_storage_rejects_invalid_uploads(
+    tmp_path,
+    content: bytes,
+    filename: str,
+    media_type: str,
+    max_size: int,
+) -> None:
+    storage = LocalVideoStorage(tmp_path)
+
+    with pytest.raises(DomainError) as raised:
+        storage.store(
+            BytesIO(content),
+            original_filename=filename,
+            media_type=media_type,
+            max_size_bytes=max_size,
+        )
+
+    assert raised.value.error_code in {"INVALID_VIDEO", "VIDEO_TOO_LARGE"}
+    assert list(tmp_path.iterdir()) == []

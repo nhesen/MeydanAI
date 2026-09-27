@@ -1,9 +1,10 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, File, Header, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.matches import (
@@ -17,11 +18,15 @@ from app.schemas.matches import (
     MatchResponse,
     MatchStateUpdate,
 )
+from app.schemas.processing import ProcessingJobResponse
 from app.services.matches import MatchService
+from app.services.processing import ProcessingService
+from app.services.video_storage import LocalVideoStorage
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 DatabaseSession = Annotated[Session, Depends(get_db)]
 OrganizerToken = Annotated[str, Header(alias="X-Organizer-Token")]
+VideoUpload = Annotated[UploadFile, File()]
 
 
 @router.post(
@@ -56,6 +61,55 @@ def update_match_state(
     return ApiResponse(
         data=MatchService(session).update_match_state(match_id, organizer_token, payload)
     )
+
+
+@router.post(
+    "/{match_id}/processing-jobs",
+    response_model=ApiResponse[ProcessingJobResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_processing_job(
+    match_id: uuid.UUID,
+    session: DatabaseSession,
+    organizer_token: OrganizerToken,
+    video: VideoUpload,
+) -> ApiResponse[ProcessingJobResponse]:
+    MatchService(session).get_organizer_match(match_id, organizer_token)
+    settings = get_settings()
+    storage = LocalVideoStorage(settings.video_storage_path)
+    stored = storage.store(
+        video.file,
+        original_filename=video.filename or "",
+        media_type=video.content_type or "",
+        max_size_bytes=settings.max_video_upload_size,
+    )
+    try:
+        job = ProcessingService(session).create_job(
+            match_id=match_id,
+            organizer_token=organizer_token,
+            source_reference=stored.reference,
+            source_media_type=stored.media_type,
+            source_size_bytes=stored.size_bytes,
+            provider=settings.analytics_provider,
+        )
+    except Exception:
+        storage.delete(stored.reference)
+        raise
+    finally:
+        await video.close()
+    return ApiResponse(data=job)
+
+
+@router.get(
+    "/{match_id}/processing-jobs",
+    response_model=ApiResponse[list[ProcessingJobResponse]],
+)
+def list_processing_jobs(
+    match_id: uuid.UUID,
+    session: DatabaseSession,
+    organizer_token: OrganizerToken,
+) -> ApiResponse[list[ProcessingJobResponse]]:
+    return ApiResponse(data=ProcessingService(session).list_jobs(match_id, organizer_token))
 
 
 @router.post(
