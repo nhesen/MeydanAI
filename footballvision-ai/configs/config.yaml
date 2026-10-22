@@ -31,10 +31,10 @@ pitch:
 detection:
   model: yolo11n.pt         # custom football weights preferred: player/gk/referee/ball
   pitch_model: ""           # optional YOLO pose/keypoint pitch model
-  image_size: 1280
+  image_size: 640           # 4 GB GPU üçün 640; 8 GB və yuxarıda 960 və ya 1280
   confidence: 0.25
   ball_confidence: 0.12
-  device: auto              # auto | cpu | 0
+  device: auto              # auto GPU varsa CUDA seçir, yoxdursa CPU
   player_classes: [player, person, goalkeeper]
   keeper_classes: [goalkeeper]
   referee_classes: [referee]

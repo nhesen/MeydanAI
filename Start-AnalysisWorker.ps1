@@ -22,4 +22,13 @@ Set-Location .\backend
 if (Test-Path .\.venv\Scripts\Activate.ps1) {
   .\.venv\Scripts\Activate.ps1
 }
+
+$env:FOOTBALLVISION_DEVICE = "0"
+$env:FOOTBALLVISION_IMAGE_SIZE = "640"
+$cudaReady = python -c "import torch; print(torch.cuda.is_available())"
+if ($cudaReady -ne "True") {
+  Write-Host "CUDA PyTorch qurulur (RTX GPU)..."
+  python -m pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu128
+}
+python -c "import torch; print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU fallback')"
 python -m app.worker
