@@ -125,7 +125,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             fine_grid_cols=int(pitch.get("fine_grid_cols", 6)),
         ),
         detection=DetectionConfig(
-            model=str(detection.get("model", "yolo11n.pt")),
+            model=str(os.environ.get("FOOTBALLVISION_MODEL", detection.get("model", "yolo11n.pt"))),
             pitch_model=str(detection.get("pitch_model", "")),
             image_size=int(detection.get("image_size", 1280)),
             confidence=float(detection.get("confidence", 0.25)),

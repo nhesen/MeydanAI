@@ -79,6 +79,7 @@ def process_job(api: WorkerApi, video_root: Path, job_id: uuid.UUID) -> None:
             )
         logger.info("local_video_job_completed", extra={"job_id": str(job_id)})
     except ValueError as error:
+        logger.exception("local_video_job_failed_detail")
         code = "INVALID_VIDEO" if str(error) == "VIDEO_UNREADABLE" else "PROCESSING_FAILED"
         _fail(api, job_id, code)
     except WorkerApiError as error:

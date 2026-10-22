@@ -13,15 +13,33 @@ interface DisplayEvent {
   timestampMs: number;
   title: string;
   detail: string | null;
-  type: "sprint" | "peak_speed" | "jersey_change" | "high_intensity" | "custom";
+  type: string;
 }
 
-const eventLabels: Record<DisplayEvent["type"], string> = {
+const eventLabels: Record<string, string> = {
   sprint: "Sprint",
   peak_speed: "Peak speed",
   jersey_change: "Jersey change",
   high_intensity: "High intensity",
   custom: "Performance event",
+  pass: "Pass",
+  successful_pass: "Successful pass",
+  failed_pass: "Failed pass",
+  key_pass: "Key pass",
+  shot: "Shot",
+  shot_on_target: "Shot on target",
+  shot_off_target: "Shot off target",
+  goal: "Goal",
+  assist: "Assist",
+  tackle: "Tackle",
+  interception: "Interception",
+  turnover: "Turnover",
+  ball_recovery: "Ball recovery",
+  dribble: "Dribble",
+  save: "Save",
+  corner: "Corner",
+  free_kick: "Free kick",
+  penalty: "Penalty",
 };
 
 export function PlayerPerformanceTimeline({
@@ -65,7 +83,7 @@ export function PlayerPerformanceTimeline({
             </span>
             <div className="min-w-0 pb-5 pt-2">
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                {eventLabels[event.type]}
+                {eventLabels[event.type] ?? event.type.replaceAll("_", " ")}
               </p>
               <p className="mt-1 break-words text-sm font-semibold text-slate-950">
                 {event.title}

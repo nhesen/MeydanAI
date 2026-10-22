@@ -122,7 +122,25 @@ export interface PlayerAnalyticsEvent {
     | "sprint"
     | "peak_speed"
     | "high_intensity_period"
-    | "custom";
+    | "custom"
+    | "pass"
+    | "successful_pass"
+    | "failed_pass"
+    | "key_pass"
+    | "shot"
+    | "shot_on_target"
+    | "shot_off_target"
+    | "goal"
+    | "assist"
+    | "tackle"
+    | "interception"
+    | "turnover"
+    | "ball_recovery"
+    | "dribble"
+    | "save"
+    | "corner"
+    | "free_kick"
+    | "penalty";
   timestamp_ms: number;
   speed_kmh: number | null;
   title: string;

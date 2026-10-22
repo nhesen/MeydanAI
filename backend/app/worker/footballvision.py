@@ -34,10 +34,18 @@ FOOTBALL_EVENT_TYPES = (
 )
 
 
+def footballvision_root() -> Path:
+    configured = os.environ.get("FOOTBALLVISION_ROOT", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path(__file__).resolve().parents[3] / "footballvision-ai"
+
+
 def analyze_with_footballvision(path: Path) -> list[PlayerMotionResult]:
-    root = Path(os.environ.get("FOOTBALLVISION_ROOT", "")).expanduser()
+    root = footballvision_root()
     if not root.is_dir():
         raise ValueError("FOOTBALLVISION_ROOT is not a directory")
+    _ensure_football_weights(root)
     output = Path(os.environ.get("FOOTBALLVISION_OUTPUT", "var/footballvision-jobs")) / uuid.uuid4().hex
     output.mkdir(parents=True, exist_ok=True)
     config = os.environ.get(
@@ -46,6 +54,9 @@ def analyze_with_footballvision(path: Path) -> list[PlayerMotionResult]:
     )
     env = os.environ.copy()
     env["PYTHONPATH"] = str(root)
+    weights = root / "models" / "football-player-detection.pt"
+    if weights.is_file():
+        env["FOOTBALLVISION_MODEL"] = str(weights)
     completed = subprocess.run(
         [
             sys.executable,
@@ -124,6 +135,26 @@ def load_motion_results(output: Path) -> list[PlayerMotionResult]:
             )
         )
     return results
+
+
+def _ensure_football_weights(root: Path) -> None:
+    destination = root / "models" / "football-player-detection.pt"
+    if destination.is_file() and destination.stat().st_size > 1_000_000:
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    candidates = [
+        Path(__file__).resolve().parents[2] / "var" / "yolo-demo" / "models" / destination.name,
+        Path(__file__).resolve().parents[3] / "backend" / "var" / "yolo-demo" / "models" / destination.name,
+    ]
+    for source in candidates:
+        if source.is_file() and source.stat().st_size > 1_000_000:
+            destination.write_bytes(source.read_bytes())
+            return
+    from app.demo.models import player_weights
+
+    source = player_weights(root)
+    if source.resolve() != destination.resolve() and source.is_file():
+        destination.write_bytes(source.read_bytes())
 
 
 def _float(value: Any) -> float | None:

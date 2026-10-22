@@ -93,10 +93,23 @@ export function DashboardExperience() {
             Create match
           </Link>
         }
-        description="Matches, players, processing and verified analytics in one place."
+        description="Create a match, then upload the hali-saha video. FootballVision writes players, passes, shots and goals."
         eyebrow="Football analytics"
         title="MeydanAI dashboard"
       />
+      <Card className="mt-6">
+        <h2 className="text-lg font-semibold text-slate-950">Upload match video</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
+          Video yükləmə dashboard-da deyil, matçın idarə səhifəsindədir. Matç
+          yaradın, sonra Manage match ekranında MP4 seçin.
+        </p>
+        <Link
+          className="mt-4 inline-flex h-11 items-center justify-center rounded-xl bg-brand-700 px-4 text-sm font-semibold text-white hover:bg-brand-800"
+          href="/matches/new"
+        >
+          Create match and upload video
+        </Link>
+      </Card>
 
       <section
         aria-label="Platform summary"

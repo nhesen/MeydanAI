@@ -61,11 +61,13 @@ class PlayerMotionResult:
 
 
 def analyze_video(path: Path) -> list[PlayerMotionResult]:
-    if os.environ.get("FOOTBALLVISION_ENABLED", "").lower() in {"1", "true", "yes"}:
-        from app.worker.footballvision import analyze_with_footballvision
+    """Production path is FootballVision. Motion blobs stay only as an explicit fallback."""
+    mode = os.environ.get("FOOTBALLVISION_ENABLED", "auto").strip().lower()
+    if mode in {"0", "false", "no", "motion"}:
+        return analyze_video_motion(path)
+    from app.worker.footballvision import analyze_with_footballvision
 
-        return analyze_with_footballvision(path)
-    return analyze_video_motion(path)
+    return analyze_with_footballvision(path)
 
 
 def analyze_video_motion(path: Path) -> list[PlayerMotionResult]:
