@@ -1,9 +1,44 @@
 # MeydanAI
 
+## FootballVision AI
+
+Production match analytics lives in [`footballvision-ai/`](footballvision-ai/).
+It turns a hali-saha or broadcast clip into player/team stats, heatmaps, pass/shot/goal
+events, possession, highlights and an HTML report, then the local worker can ingest
+those results into PostgreSQL.
+
+```powershell
+cd footballvision-ai
+py -3.11 -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python -m pytest
+```
+
+Enable it on the MeydanAI worker:
+
+```powershell
+$env:FOOTBALLVISION_ENABLED = "1"
+$env:FOOTBALLVISION_ROOT = (Resolve-Path .\footballvision-ai).Path
+$env:FOOTBALLVISION_CONFIG = (Resolve-Path .\footballvision-ai\configs\config.yaml).Path
+python -m app.worker
+```
+
+See [footballvision-ai/README.md](footballvision-ai/README.md) for calibration, API
+and GPU/CPU notes. Apply `alembic upgrade head` so player analytics events accept
+pass/shot/goal types.
+
+## YOLO video demo
+
+A local upload → YOLO + BoT-SORT → annotated video and CSV/JSON report demo is
+available. Run `./Start-YoloDemo.ps1` on Windows and open `http://127.0.0.1:8010`.
+See [YOLO-DEMO.md](YOLO-DEMO.md) for setup, calibration and measurement limits.
+It runs independently of the production API/database; uncalibrated speed and
+distance are unknown rather than fabricated.
+
 MeydanAI is a mobile-first football match platform. Organizers create matches,
 players join through a QR token, and the product surfaces real match, player,
-team, analytics, and highlight data from PostgreSQL. There is no fake production
-analytics layer and no on-device computer-vision model in this repository.
+team, analytics, and highlight data from PostgreSQL. FootballVision AI is the
+match-analysis worker; the older YOLO demo remains a limited local lab UI.
 
 ## Architecture
 

@@ -556,7 +556,11 @@ class PlayerAnalyticsEvent(Base):
     __tablename__ = "player_analytics_events"
     __table_args__ = (
         CheckConstraint(
-            "event_type IN ('sprint', 'peak_speed', 'high_intensity_period', 'custom')",
+            "event_type IN ('sprint', 'peak_speed', 'high_intensity_period', 'custom', "
+            "'pass', 'successful_pass', 'failed_pass', 'key_pass', 'shot', "
+            "'shot_on_target', 'shot_off_target', 'goal', 'assist', 'tackle', "
+            "'interception', 'turnover', 'ball_recovery', 'dribble', 'save', "
+            "'corner', 'free_kick', 'penalty')",
             name="ck_player_analytics_event_type",
         ),
         CheckConstraint("timestamp_ms >= 0", name="ck_player_analytics_event_time"),

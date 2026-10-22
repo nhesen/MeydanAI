@@ -128,7 +128,30 @@ class IntensityBucketResponse(BaseModel):
 
 class PlayerAnalyticsEventResponse(BaseModel):
     id: uuid.UUID
-    event_type: Literal["sprint", "peak_speed", "high_intensity_period", "custom"]
+    event_type: Literal[
+        "sprint",
+        "peak_speed",
+        "high_intensity_period",
+        "custom",
+        "pass",
+        "successful_pass",
+        "failed_pass",
+        "key_pass",
+        "shot",
+        "shot_on_target",
+        "shot_off_target",
+        "goal",
+        "assist",
+        "tackle",
+        "interception",
+        "turnover",
+        "ball_recovery",
+        "dribble",
+        "save",
+        "corner",
+        "free_kick",
+        "penalty",
+    ]
     timestamp_ms: int = Field(ge=0)
     speed_kmh: float | None = Field(default=None, ge=0)
     title: str

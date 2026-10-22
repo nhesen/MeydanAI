@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
@@ -60,6 +61,14 @@ class PlayerMotionResult:
 
 
 def analyze_video(path: Path) -> list[PlayerMotionResult]:
+    if os.environ.get("FOOTBALLVISION_ENABLED", "").lower() in {"1", "true", "yes"}:
+        from app.worker.footballvision import analyze_with_footballvision
+
+        return analyze_with_footballvision(path)
+    return analyze_video_motion(path)
+
+
+def analyze_video_motion(path: Path) -> list[PlayerMotionResult]:
     capture = cv2.VideoCapture(str(path))
     if not capture.isOpened():
         raise ValueError("VIDEO_UNREADABLE")

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MeydanAI · Video analizi</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1210;--panel:#141e19;--line:#2b3d32;--muted:#a6b8ac;--green:#9df3a5}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f1f6f1;font:15px/1.6 system-ui,sans-serif}main{max-width:1140px;margin:auto;padding:28px 24px 70px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:20px}.logo{font-weight:800;font-size:24px;letter-spacing:-1px}.logo span{color:var(--green)}.badge{font:12px monospace;border:1px solid var(--line);padding:6px 12px;border-radius:20px;color:var(--green)}h1{font-size:clamp(32px,5vw,54px);letter-spacing:-2px;line-height:1.1;margin:40px 0 16px}h2{font-size:21px;margin:0 0 12px}p{color:var(--muted);margin:10px 0 20px}.lead{max-width:760px;font-size:17px}.grid{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;margin-top:28px}.panel{background:var(--panel);border:1px solid var(--line);padding:24px;border-radius:16px}.step{font:12px monospace;letter-spacing:2px;color:var(--green);margin-bottom:10px}label{display:block;margin:12px 0}input,select,button{font:inherit}input[type=file]{width:100%;padding:20px;border:1px dashed #688672;border-radius:10px;background:#0d1610}input[type=number],select{padding:9px;background:#0b1410;border:1px solid var(--line);border-radius:7px;color:inherit;max-width:150px}input[type=checkbox]{accent-color:var(--green)}button,.link{display:inline-block;border:0;border-radius:8px;padding:11px 17px;background:var(--green);color:#0a2310;font-weight:700;text-decoration:none;cursor:pointer}button:disabled{opacity:.4;cursor:default}.secondary{background:#26392d;color:#d4e7d8}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}small,.muted{color:var(--muted)}canvas{max-width:100%;height:auto;display:block;border-radius:8px;background:#09110c}#calibrationCanvas{cursor:crosshair}video{width:100%;max-height:520px;border-radius:10px;background:#000}progress{width:100%;height:12px;accent-color:var(--green)}#status{white-space:pre-wrap}#error{color:#ffc0a7}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.stat{padding:18px;border:1px solid var(--line);border-radius:12px}.stat strong{font-size:28px;display:block;line-height:1.3}.stat span{color:var(--muted);font-size:12px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;white-space:nowrap;margin:15px 0}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted)}td{font-variant-numeric:tabular-nums}#results{margin-top:24px}.note{border-left:3px solid #bcac69;padding:10px 15px;background:#25261b;color:#ded8bb;font-size:13px;margin:16px 0}[hidden]{display:none!important}footer{font-size:12px;color:var(--muted);margin-top:30px}@media(max-width:760px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}main{padding:20px 16px}.panel{padding:18px}}
+.table-wrap{max-height:430px}th{position:sticky;top:0;background:var(--panel);z-index:1}
+</style>
+</head>
+<body><main>
+<header><div class="logo">Meydan<span>AI</span></div><span class="badge">YOLO VIDEO DEMO</span></header>
+<h1>Oyunu yüklə.<br>Hərəkəti izlə.</h1>
+<p class="lead">Videodakı insanları aşkarlayın, izləmə ID-lərini görüntüdə görün və ölçülən nəticələri endirin.</p>
+<div class="grid">
+<section class="panel"><div class="step">01 / VİDEO</div><h2>Oyun görüntüsünü seç</h2>
+<p>MP4, MOV və ya WebM · maksimum 500 MB · <span id="limit">180</span> saniyə.<br>YouTube-dan əldə etdiyiniz video faylını da yükləyə bilərsiniz.</p>
+<label for="file">Video faylı</label><input id="file" type="file" accept="video/mp4,video/quicktime,video/webm,.m4v">
+<p id="fileInfo" aria-live="polite"></p><video id="preview" controls muted hidden></video>
+</section>
+<section class="panel"><div class="step">02 / ÖLÇMƏ</div><h2>Nə hesablana bilər?</h2>
+<p>İzləmə ID-ləri, forma rəngi qrupları, top aşkarlaması, görünmə müddəti və istilik xəritəsi.</p>
+<label><input type="checkbox" id="calibrate"> Kalibrasiya ilə metr və km/saat təxmin et</label>
+<p class="note">YOLO insanı aşkarlayır. Hakim və tamaşaçı da aşkarlana bilər. ID sayı oyunçu sayı deyil; örtülmə və kadr dəyişməsi ID-ni dəyişə bilər.</p>
+<div id="calibrationSettings" hidden>
+<label><input type="checkbox" id="fixed"> Kamera hərəkət etmir, zoom və kadr keçidi yoxdur.</label>
+<label><input type="checkbox" id="moving"> Kamera hərəkətini kompensasiya et — sınaq rejimi</label>
+<small>Hərəkətli rejim ilk kadrın kalibrasiyasını fon nöqtələri ilə daşıyır. Kadr keçidi və ya zəif uyğunluqda ölçmə dayanır. Tədricən yığılan xəta mümkündür.</small>
+<div class="row"><label>Uzunluq (m)<br><input id="length" type="number" min="2" max="150" value="60"></label><label>En (m)<br><input id="width" type="number" min="2" max="100" value="68"></label></div>
+<small>Tam meydança görünmürsə görünən ot səthinin küncləri kifayətdir — uzunluq/en həmin görünən düzbucaqlının metr ölçüsüdür. Künclər avtomatik tapılır; istəsəniz əl ilə də düzəldin. Ardıcıllıq: 1 → 2 uzunluq, 2 → 3 en.</small>
+</div>
+<button id="start" disabled>Analizə başla</button><p id="health" class="muted"></p>
+</section></div>
+<section id="calibrationPanel" class="panel" hidden style="margin-top:20px"><h2>Meydançanın küncləri</h2><p>Görünən otun dörd küncü avtomatik seçilir. Tam 105×68 küncləri kadrda yoxdursa onları təxmin etməyin — görünən sahəni saxlayın.</p><canvas id="calibrationCanvas"></canvas><div class="row" style="margin-top:12px"><button id="reset" class="secondary">Nöqtələri sil</button><span id="pointCount">0 / 4 nöqtə</span></div></section>
+<section id="progressPanel" class="panel" hidden style="margin-top:20px"><h2>Analiz</h2><progress id="progress" max="100" value="0"></progress><p id="status" role="status"></p></section>
+<p id="error" role="alert"></p>
+<section id="results" hidden>
+<div class="row"><h2 style="margin-right:auto">Analiz nəticələri</h2><a class="link secondary" id="jsonLink">JSON</a><a class="link secondary" id="csvLink">CSV</a><a class="link" id="videoLink" download>Videonu endir</a></div>
+<div class="stats" id="stats"></div><div class="panel"><video id="resultVideo" controls playsinline></video><p id="metricNote" class="note"></p>
+<p id="footballNote" class="note"></p>
+<div class="table-wrap"><table><thead><tr><th>İzləmə ID</th><th>Rəng qrupu</th><th>Görünmə, s</th><th>Əminlik</th><th>Ölçülən hissə, s</th><th>Məsafə, m</th><th>Orta sürət, km/saat</th><th>Maks. sürət, km/saat</th><th>Rədd edilən sıçrayış</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="row"><h2>Hərəkət trayektoriyası</h2><label for="trackSelect">İzləmə ID</label><select id="trackSelect"></select></div><p id="pathNote"></p><canvas id="pathCanvas" width="960" height="540"></canvas>
+<section id="heatmapPanel" hidden><div class="row"><h2>İstilik xəritəsi</h2><label for="heatmapGroup">Qrup</label><select id="heatmapGroup"><option value="all">Hamısı</option><option value="1">Qrup 1</option><option value="2">Qrup 2</option></select></div><p id="heatmapNote"></p><img id="heatmapImage" alt="Müşahidə olunan mövqelərin sıxlıq xəritəsi" style="width:100%;max-width:960px;border-radius:8px"></section>
+<p class="muted">Rəng qrupları təsdiqlənmiş komanda deyil. Qol, pas, topa sahibolma və oyunçu reytinqi hesablanmır. Ölçmələr yalnız görünən hissələrə aiddir.</p>
+</div></section>
+<footer>MeydanAI · YOLO + BoT-SORT · Yerli demo. İlk analiz modelin endirilməsinə görə daha uzun çəkə bilər.</footer>
+</main>
+<script>
+if (location.protocol === 'file:') {
+ location.replace('http://127.0.0.1:8010/');
+}
+const $ = id => document.getElementById(id);
+let points = [], frameImage = null, fileUrl = null, busy = false, report = null, timer = null, generation = 0, maxSeconds = 180, resultBase = '';
+const value = n => n === null || n === undefined ? '—' : String(n);
+function error(message) { $('error').textContent = message; }
+function ready() { $('start').disabled = busy || !$('file').files.length || !frameImage || ($('calibrate').checked && (!($('fixed').checked || $('moving').checked) || !($('length').value > 1) || !($('width').value > 1))); }
+function grassPoints(canvas) {
+ const ctx = canvas.getContext('2d'), {width, height} = canvas, data = ctx.getImageData(0, 0, width, height).data;
+ const pts = [];
+ for (let y = 0; y < height; y += 3) {
+  for (let x = 0; x < width; x += 3) {
+   const i = (y * width + x) * 4, r = data[i], g = data[i + 1], b = data[i + 2];
+   if (g > r + 12 && g > b && g > 45) pts.push([x, y]);
+  }
+ }
+ if (pts.length < 80) return [];
+ const ys = pts.map(p => p[1]).sort((a, b) => a - b), minY = ys[0], maxY = ys[ys.length - 1], span = Math.max(8, maxY - minY);
+ const near = pts.filter(p => p[1] >= maxY - 0.18 * span), far = pts.filter(p => p[1] <= minY + 0.18 * span);
+ if (near.length < 8 || far.length < 8) return [];
+ const edge = (group, pick) => group.reduce((a, b) => pick(a, b));
+ const bl = edge(near, (a, b) => a[0] <= b[0] ? a : b), br = edge(near, (a, b) => a[0] >= b[0] ? a : b);
+ const tl = edge(far, (a, b) => a[0] <= b[0] ? a : b), tr = edge(far, (a, b) => a[0] >= b[0] ? a : b);
+ return [[bl[0] / width, bl[1] / height], [br[0] / width, br[1] / height], [tr[0] / width, tr[1] / height], [tl[0] / width, tl[1] / height]];
+}
+function drawCorners() {
+ const canvas = $('calibrationCanvas'), ctx = canvas.getContext('2d');
+ if (!frameImage) return;
+ canvas.width = frameImage.width; canvas.height = frameImage.height;
+ ctx.drawImage(frameImage, 0, 0); ctx.strokeStyle = '#9df3a5'; ctx.lineWidth = 3;
+ ctx.beginPath(); points.forEach(([x,y], i) => { i ? ctx.lineTo(x*canvas.width,y*canvas.height) : ctx.moveTo(x*canvas.width,y*canvas.height); });
+ if (points.length === 4) ctx.closePath(); ctx.stroke();
+ points.forEach(([x,y],i) => { ctx.fillStyle='#9df3a5';ctx.beginPath();ctx.arc(x*canvas.width,y*canvas.height,7,0,Math.PI*2);ctx.fill();ctx.font='bold 22px system-ui';ctx.fillText(String(i+1),x*canvas.width+12,y*canvas.height+8); });
+ $('pointCount').textContent = `${points.length} / 4 nöqtə`; ready();
+}
+$('file').onchange = async () => {
+ const selected = $('file').files[0], version = ++generation;
+ points=[];frameImage=null;error('');$('results').hidden=true;$('progressPanel').hidden=true;ready();
+ if(fileUrl) URL.revokeObjectURL(fileUrl);
+ if(!selected){$('preview').hidden=true;return;}
+ if(selected.size > 500*1024*1024){error('Maksimum fayl ölçüsü 500 MB-dır.');return;}
+ fileUrl=URL.createObjectURL(selected);$('preview').src=fileUrl;$('preview').hidden=false;
+ $('fileInfo').textContent = `${selected.name} · ${(selected.size/1024/1024).toFixed(1)} MB`;
+ const temp=document.createElement('video');temp.preload='auto';temp.muted=true;temp.src=fileUrl;
+ try {
+  await new Promise((resolve,reject)=>{temp.onloadeddata=resolve;temp.onerror=()=>reject(Error('Video brauzerdə oxunmadı. MP4/H.264 formatını sınayın.'));});
+  if(version!==generation)return;
+  if(!Number.isFinite(temp.duration) || temp.duration > maxSeconds + 0.1)throw Error(`Video ${maxSeconds} saniyədən uzun olmamalıdır.`);
+  const image=document.createElement('canvas');image.width=Math.min(960,temp.videoWidth);image.height=Math.round(temp.videoHeight*image.width/temp.videoWidth);image.getContext('2d').drawImage(temp,0,0,image.width,image.height);frameImage=image;points=grassPoints(image);if(points.length===4&&Number($('length').value)>=90)$('length').value=60;drawCorners();
+ } catch(e){error(e.message);}finally{temp.removeAttribute('src');temp.load();ready();}
+};
+$('calibrate').onchange=()=>{const enabled=$('calibrate').checked;$('calibrationSettings').hidden=!enabled;$('calibrationPanel').hidden=!enabled;if(enabled&&!$('fixed').checked&&!$('moving').checked)$('fixed').checked=true;if(enabled&&frameImage&&points.length!==4)points=grassPoints(frameImage);drawCorners();ready();};
+['length','width'].forEach(id=>$(id).oninput=ready);
+$('fixed').onchange=()=>{if($('fixed').checked)$('moving').checked=false;ready();};
+$('moving').onchange=()=>{if($('moving').checked)$('fixed').checked=false;ready();};
+$('reset').onclick=()=>{points=[];drawCorners();};
+$('calibrationCanvas').onclick=e=>{if(!frameImage||points.length===4||busy)return;const r=e.target.getBoundingClientRect();points.push([(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height]);drawCorners();};
+async function get(url,options){const response=await fetch(url,options);const data=await response.json();if(!response.ok){const failure=Error(typeof data.detail==='string'?data.detail:'Sorğu alınmadı.');failure.status=response.status;throw failure;}return data;}
+function setBusy(flag){busy=flag;['file','calibrate','fixed','moving','length','width','reset'].forEach(id=>$(id).disabled=flag);ready();}
+function showReport(data,id){
+ report=data;$('results').hidden=false;
+ const base=`/api/jobs/${id}/`;resultBase=base;
+ $('jsonLink').href=base+'report.json';$('jsonLink').download='report.json';$('csvLink').href=base+'tracks.csv';$('csvLink').download='tracks.csv';$('videoLink').href=base+'annotated.mp4';$('resultVideo').src=base+'annotated.mp4';
+ $('stats').replaceChildren();
+ [[data.duration_s+' s','Analiz edilən video'],[data.track_count,'İzləmə ID-ləri'],[data.max_simultaneous_tracks,'Eyni kadrda maksimum ID'],[data.elapsed_s+' s','Analiz müddəti']].forEach(([n,label])=>{const d=document.createElement('div');d.className='stat';const s=document.createElement('strong');s.textContent=n;const l=document.createElement('span');l.textContent=label;d.append(s,l);$('stats').append(d);});
+ $('metricNote').textContent=data.calibration?(data.calibration.source==='pitch-keypoints'?'Məsafə və sürət futbol meydança-nöqtə modelindən FIFA 105×68 şablonuna görə hesablanıb. GPS ölçməsi deyil. Örtülən hissələr və qeyri-mümkün sıçrayışlar hesablanmır.':'Məsafə və sürət seçdiyiniz kalibrasiyadan hesablanan təxminlərdir. GPS ölçməsi deyil. Örtülən hissələr və qeyri-mümkün sıçrayışlar hesablanmır.'):'Kalibrasiya yoxdur: metr və km/saat məlum deyil. “—” sıfır demək deyil. Görüntü üzrə izləmə nəticələri aşağıdadır.';
+ if(data.camera_registration?.enabled)$('metricNote').textContent+=' Kamera kompensasiyası sınaq rejimidir. '+(data.camera_registration.failed_at_s===null?'Fon uyğunluğu saxlanılıb; bu, metr dəqiqliyinin təsdiqi deyil.':`${data.camera_registration.failed_at_s}-ci saniyədə kalibrasiya itirilib; sonrakı metr ölçmələri yoxdur.`);
+ $('footballNote').textContent=data.jersey_groups?`Rəng qrupları: Q1 — ${data.team_track_counts['1']} ID, Q2 — ${data.team_track_counts['2']} ID, naməlum — ${data.team_track_counts['None']} ID. Top videonun ${data.ball.coverage_percent}%-də aşkarlanıb. Bu faiz topa sahibolma deyil. Oxşar formalar, hakimlər və örtülmə qruplaşdırmanı poza bilər.`:'Bu hesabat əvvəlki analiz versiyası ilə hazırlanıb.';
+ $('rows').replaceChildren();$('trackSelect').replaceChildren();
+ for(const t of data.tracks){const tr=document.createElement('tr');const group=t.role==='goalkeeper'?(t.team_group?`Qapıçı · Qrup ${t.team_group}`:'Qapıçı'):(t.team_group?`Qrup ${t.team_group}`:'Naməlum');[t.track_id,group,t.visible_seconds,Math.round(t.mean_confidence*100)+'%',t.measured_seconds,t.distance_m,t.avg_speed_kmh,t.max_speed_kmh,t.rejected_jumps].forEach(v=>{const td=document.createElement('td');td.textContent=value(v);tr.append(td);});$('rows').append(tr);const option=document.createElement('option');option.value=t.track_id;option.textContent='ID '+t.track_id;$('trackSelect').append(option);}
+ if(!data.tracks.length)$('metricNote').textContent+=' Bu videoda izləmə ID-si alınmadı. Daha aydın görüntü sınayın.';
+ $('heatmapPanel').hidden=data.schema_version<2;$('heatmapGroup').value='all';
+ $('heatmapNote').textContent=data.calibration?'Kalibrasiya üzrə müşahidə sıxlığı; görünməyən hissələr doldurulmur.':'Görüntü üzrə müşahidə sıxlığı. Kamera hərəkət edəndə meydançanın fiziki istilik xəritəsi deyil.';
+ if(data.schema_version>=2)drawHeatmap();drawPath();
+}
+function drawHeatmap(){const group=$('heatmapGroup').value;$('heatmapImage').src=resultBase+(group==='all'?'heatmap.png':`heatmap-group-${group}.png`);}
+$('heatmapGroup').onchange=drawHeatmap;
+function drawPath(){
+ const ctx=$('pathCanvas').getContext('2d');ctx.clearRect(0,0,960,540);
+ const track=report?.tracks.find(t=>String(t.track_id)===$('trackSelect').value);if(!track)return;
+ const cal=report.calibration;$('pathNote').textContent=cal?'Meydança koordinatları. Xətt fasilələri görünməyən hissələri göstərir.':'Görüntü koordinatları. Hərəkət edən kamerada bu xətt meydançadakı qaçış yolu deyil.';
+ ctx.strokeStyle='#2c5138';ctx.lineWidth=2;ctx.strokeRect(10,10,940,520);ctx.beginPath();ctx.moveTo(480,10);ctx.lineTo(480,530);ctx.stroke();
+ ctx.strokeStyle='#9df3a5';ctx.lineWidth=2;ctx.beginPath();let previous=null;
+ for(const s of track.samples){const p=cal?(s.ground?[s.ground[0]/cal.length_m,s.ground[1]/cal.width_m]:null):[s.x,s.y];if(!p){previous=null;continue;}const x=10+p[0]*940,y=10+p[1]*520;if(previous&&s.t-previous.t<=0.65&&s.segment===previous.segment)ctx.lineTo(x,y);else ctx.moveTo(x,y);previous=s;}ctx.stroke();
+ for(const s of track.samples){const p=cal?(s.ground?[s.ground[0]/cal.length_m,s.ground[1]/cal.width_m]:null):[s.x,s.y];if(p){ctx.fillStyle='#9df3a590';ctx.beginPath();ctx.arc(10+p[0]*940,10+p[1]*520,2,0,Math.PI*2);ctx.fill();}}
+}
+$('trackSelect').onchange=drawPath;
+async function poll(id){
+ try{const state=await get(`/api/jobs/${id}`);error('');$('progress').value=state.progress;$('status').textContent=state.message;
+  if(state.status==='completed'){showReport(await get(`/api/jobs/${id}/report.json`),id);setBusy(false);return;}
+  if(state.status==='failed'){error(state.message);setBusy(false);return;}
+  timer=setTimeout(()=>poll(id),1800);
+ }catch(e){if(e.status===404||e.status===422){error(e.message);setBusy(false);return;}error(e.message+' Əlaqə bərpa ediləndə yenidən yoxlanacaq.');timer=setTimeout(()=>poll(id),5000);}
+}
+$('start').onclick=async()=>{
+ error('');setBusy(true);clearTimeout(timer);$('results').hidden=true;$('progressPanel').hidden=false;$('progress').value=0;$('status').textContent='Video yüklənir…';
+ const body=new FormData();body.append('file',$('file').files[0]);
+ if($('calibrate').checked)body.append('calibration',JSON.stringify({points:points.length===4?points:[],length_m:Number($('length').value),width_m:Number($('width').value),fixed_camera:$('fixed').checked,compensate_camera:$('moving').checked}));
+ try{const job=await get('/api/jobs',{method:'POST',body});history.replaceState(null,'',`?job=${job.id}`);poll(job.id);}catch(e){error(e.message);setBusy(false);}
+};
+get('/api/health').then(h=>{maxSeconds=h.max_seconds;$('limit').textContent=h.max_seconds;$('health').textContent=h.ffmpeg?'Hazır · CPU/GPU sürətindən asılı olaraq analiz vaxt apara bilər.':'FFmpeg tapılmadı. Başlatmadan əvvəl FFmpeg quraşdırın.';}).catch(()=>error('Demo serverə qoşulmadı. HTML faylını birbaşa açmaq olmaz — brauzerdə http://127.0.0.1:8010 açın və əvvəl .\\Start-YoloDemo.ps1 işə salın.'));
+const resumed=new URLSearchParams(location.search).get('job');if(resumed&&/^[a-f0-9]{32}$/.test(resumed)){setBusy(true);$('progressPanel').hidden=false;poll(resumed);}
+</script></body></html>

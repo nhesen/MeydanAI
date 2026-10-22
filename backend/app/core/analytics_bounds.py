@@ -195,12 +195,37 @@ def sanitize_intensity(
     return result
 
 
+FOOTBALL_EVENT_TYPES = {
+    "pass",
+    "successful_pass",
+    "failed_pass",
+    "key_pass",
+    "shot",
+    "shot_on_target",
+    "shot_off_target",
+    "goal",
+    "assist",
+    "tackle",
+    "interception",
+    "turnover",
+    "ball_recovery",
+    "dribble",
+    "save",
+    "corner",
+    "free_kick",
+    "penalty",
+}
+
+
 def sanitize_events(events: list[Any]) -> list[Any]:
     kept: list[Any] = []
     sprints = 0
     for event in sorted(events, key=lambda item: item.timestamp_ms):
         speed = event.speed_kmh
         event_type = event.event_type
+        if event_type in FOOTBALL_EVENT_TYPES:
+            kept.append(event)
+            continue
         if speed is not None and speed > MAX_PLAUSIBLE_STEP_KMH:
             if event_type != "peak_speed":
                 continue

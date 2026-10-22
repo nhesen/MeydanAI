@@ -1,0 +1,81 @@
+home_name: Home
+away_name: Away
+camera_mode: fixed          # fixed | broadcast
+compensate_camera: false
+output_fps_cap: 30
+highlight_pre_s: 3.0
+highlight_post_s: 3.0
+storage_dir: var/jobs
+sqlite_path: var/footballvision.sqlite
+redis_url: redis://localhost:6379/0
+
+pitch:
+  mode: hali_saha           # hali_saha | futsal | 11v11
+  length_m: 40.0
+  width_m: 20.0
+  goal_width_m: 3.0
+  goal_depth_m: 1.0
+  grid_rows: 3
+  grid_cols: 3
+  fine_grid_rows: 4
+  fine_grid_cols: 6
+
+# 11-a-side broadcast example:
+# pitch:
+#   mode: 11v11
+#   length_m: 105.0
+#   width_m: 68.0
+#   goal_width_m: 7.32
+#   goal_depth_m: 2.44
+
+detection:
+  model: yolo11n.pt         # custom football weights preferred: player/gk/referee/ball
+  pitch_model: ""           # optional YOLO pose/keypoint pitch model
+  image_size: 1280
+  confidence: 0.25
+  ball_confidence: 0.12
+  device: auto              # auto | cpu | 0
+  player_classes: [player, person, goalkeeper]
+  keeper_classes: [goalkeeper]
+  referee_classes: [referee]
+  ball_classes: [ball, sports ball, football]
+
+tracking:
+  tracker: bytetrack        # bytetrack | botsort
+  lost_track_buffer: 30
+  match_threshold: 0.55
+  min_iou: 0.3
+  ball_max_gap_frames: 12
+  reid_hist_weight: 0.45
+  reid_motion_weight: 0.35
+  reid_color_weight: 0.20
+  reid_max_distance_m: 6.0
+  max_speed_kmh: 36.0
+  sprint_kmh: 18.0          # lower for 5-a-side; use 24 for 11v11
+  standing_kmh: 1.2
+
+events:
+  possession_radius_m: 1.6
+  possession_min_frames: 4
+  pass_min_distance_m: 2.0
+  pass_max_time_s: 3.5
+  pass_min_time_s: 0.12
+  shot_min_speed_kmh: 28.0
+  shot_goal_align: 0.35
+  shot_min_frames: 3
+  goal_min_frames: 2
+  dribble_min_distance_m: 3.0
+  tackle_radius_m: 1.8
+  key_pass_shot_window_s: 8.0
+  set_piece_stop_s: 2.2
+
+calibration:
+  # Normalized image points for a fixed hali-saha camera, order:
+  # near-left (0,0), near-right (length,0), far-right (length,width), far-left (0,width)
+  points: []
+  # Example:
+  # points:
+  #   - [0.08, 0.92]
+  #   - [0.94, 0.93]
+  #   - [0.82, 0.18]
+  #   - [0.16, 0.17]

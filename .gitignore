@@ -41,9 +41,11 @@ build/
 
 # Local media, uploads, and model weights
 backend/var/
+backend/Ultralytics/
+backend/runs/
 **/var/videos/
 uploads/
-storage/
+/storage/
 recordings/
 *.mp4
 *.mov
