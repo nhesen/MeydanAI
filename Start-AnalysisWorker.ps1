@@ -14,6 +14,9 @@ Get-Content $envFile | ForEach-Object {
   $name, $value = $line.Split("=", 2)
   Set-Item -Path "Env:$($name.Trim())" -Value $value.Trim()
 }
+$videoRoot = Join-Path $PSScriptRoot "backend\var\videos"
+New-Item -ItemType Directory -Force -Path $videoRoot | Out-Null
+$env:VIDEO_STORAGE_PATH = (Resolve-Path $videoRoot).Path
 
 Set-Location .\backend
 if (Test-Path .\.venv\Scripts\Activate.ps1) {

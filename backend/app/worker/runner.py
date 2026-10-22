@@ -46,6 +46,7 @@ def process_job(api: WorkerApi, video_root: Path, job_id: uuid.UUID) -> None:
     try:
         _report(api, job_id, ProcessingStage.VALIDATING, 8)
         if not str(video_path).startswith(str(video_root.resolve())) or not video_path.is_file():
+            logger.warning("video_missing path=%s root=%s", video_path, video_root)
             _fail(api, job_id, "INVALID_VIDEO")
             return
         _report(api, job_id, ProcessingStage.PREPROCESSING, 18)
