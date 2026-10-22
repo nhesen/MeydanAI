@@ -17,6 +17,10 @@ Get-Content $envFile | ForEach-Object {
 $videoRoot = Join-Path $PSScriptRoot "backend\var\videos"
 New-Item -ItemType Directory -Force -Path $videoRoot | Out-Null
 $env:VIDEO_STORAGE_PATH = (Resolve-Path $videoRoot).Path
+$containerIp = docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" meydanai-backend-1 2>$null
+if ($containerIp) {
+  $env:API_BASE_URL = "http://${containerIp}:8000"
+}
 
 Set-Location .\backend
 if (Test-Path .\.venv\Scripts\Activate.ps1) {

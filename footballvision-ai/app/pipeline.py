@@ -135,7 +135,7 @@ def analyze_video(
         cap.release()
         writer.release()
         radar.release()
-    if not teams.centers:
+    if teams.centers is None:
         teams.fit()
     for track in tracks.values():
         track.team = teams.team(track.track_id)

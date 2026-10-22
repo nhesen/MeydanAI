@@ -10,7 +10,7 @@ from typing import Any
 
 class WorkerApiError(RuntimeError):
     def __init__(self, status: int, body: str) -> None:
-        super().__init__(f"Worker API failed with HTTP {status}")
+        super().__init__(f"Worker API failed with HTTP {status}: {body[:500]}")
         self.status = status
         self.body = body
 

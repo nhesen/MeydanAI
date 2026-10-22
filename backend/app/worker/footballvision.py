@@ -46,8 +46,15 @@ def analyze_with_footballvision(path: Path) -> list[PlayerMotionResult]:
     if not root.is_dir():
         raise ValueError("FOOTBALLVISION_ROOT is not a directory")
     _ensure_football_weights(root)
-    output = Path(os.environ.get("FOOTBALLVISION_OUTPUT", "var/footballvision-jobs")) / uuid.uuid4().hex
+    output_root = Path(os.environ.get("FOOTBALLVISION_OUTPUT", root / "var" / "footballvision-jobs"))
+    if not output_root.is_absolute():
+        output_root = (root / output_root).resolve()
+    output = output_root / uuid.uuid4().hex
     output.mkdir(parents=True, exist_ok=True)
+    print(
+        f"footballvision device={os.environ.get('FOOTBALLVISION_DEVICE', 'auto')} image={os.environ.get('FOOTBALLVISION_IMAGE_SIZE', '640')}",
+        flush=True,
+    )
     config = os.environ.get(
         "FOOTBALLVISION_CONFIG",
         str(root / "configs" / "config.yaml"),

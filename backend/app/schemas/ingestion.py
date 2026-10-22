@@ -1,7 +1,7 @@
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.processing import ProcessingStatus
 
@@ -31,8 +31,13 @@ class AnalyticsMetricsIngest(BaseModel):
 
 class PositionSampleIngest(BaseModel):
     timestamp_ms: int = Field(ge=0)
-    x: float = Field(ge=0, le=1)
-    y: float = Field(ge=0, le=1)
+    x: float
+    y: float
+
+    @field_validator("x", "y")
+    @classmethod
+    def clamp_unit_interval(cls, value: float) -> float:
+        return min(1.0, max(0.0, float(value)))
 
 
 class IntensityBucketIngest(BaseModel):

@@ -115,7 +115,11 @@ def _ingest_payload(
             "peak_speed_at_ms": track.peak_speed_at_ms,
         },
         "positions": [
-            {"timestamp_ms": sample.timestamp_ms, "x": sample.x, "y": sample.y}
+            {
+                "timestamp_ms": sample.timestamp_ms,
+                "x": min(1.0, max(0.0, sample.x)),
+                "y": min(1.0, max(0.0, sample.y)),
+            }
             for sample in track.positions
         ],
         "intensity": [
