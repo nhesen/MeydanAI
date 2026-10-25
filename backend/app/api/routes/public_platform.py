@@ -1,10 +1,13 @@
+import re
 import uuid
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit_search
 from app.schemas.common import ApiResponse
@@ -25,7 +28,7 @@ from app.services.platform import PlatformService
 router = APIRouter(prefix="/public", tags=["public-platform"])
 DatabaseSession = Annotated[Session, Depends(get_db)]
 Page = Annotated[int, Query(ge=1)]
-PageSize = Annotated[int, Query(ge=1, le=50)]
+PageSize = Annotated[int, Query(ge=1, le=100)]
 SearchQuery = Annotated[str | None, Query(min_length=1, max_length=100)]
 MatchStatus = Literal[
     "scheduled",
@@ -159,6 +162,35 @@ def get_analytics_leaderboards(
             minimum_matches=minimum_matches,
         )
     )
+
+
+@router.get("/media/highlights/{file_name}")
+def get_highlight_clip(file_name: str, request: Request) -> FileResponse:
+    if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*\.mp4", file_name) is None:
+        raise HTTPException(status_code=404, detail="Clip was not found.")
+    settings = getattr(request.app.state, "settings", None) or get_settings()
+    root = (settings.video_storage_path / "highlights").resolve()
+    path = (root / file_name).resolve()
+    if path.parent != root or not path.is_file():
+        raise HTTPException(status_code=404, detail="Clip was not found.")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        filename=file_name,
+        content_disposition_type="inline",
+    )
+
+
+@router.get("/media/tracks/{file_name}")
+def get_track_reference(file_name: str, request: Request) -> FileResponse:
+    if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*\.(jpg|png)", file_name) is None:
+        raise HTTPException(status_code=404, detail="Track reference was not found.")
+    settings = getattr(request.app.state, "settings", None) or get_settings()
+    root = (settings.video_storage_path / "tracks").resolve()
+    path = (root / file_name).resolve()
+    if path.parent != root or not path.is_file():
+        raise HTTPException(status_code=404, detail="Track reference was not found.")
+    return FileResponse(path, media_type="image/png" if path.suffix == ".png" else "image/jpeg")
 
 
 @router.get(

@@ -23,7 +23,8 @@ def expected_goals(
         - 0.22 * defenders_in_path
     )
     value = 1.0 / (1.0 + math.exp(-logit))
-    return round(min(0.92, max(0.015, value)), 3)
+    # No artificial floor: a distant shot must stay near zero, not 0.015.
+    return round(min(0.97, max(0.0, value)), 3)
 
 
 def goal_angle(shot_x: float, shot_y: float, goal_x: float, goal_y: float, goal_width_m: float) -> float:

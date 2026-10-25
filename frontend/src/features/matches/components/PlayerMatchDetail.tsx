@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { MATCH_STATUS } from "@/config/match-status";
 import { PlayerHeatmap } from "@/features/matches/components/PlayerHeatmap";
+import { AnalysisQualityPanel } from "@/features/matches/components/AnalysisQualityPanel";
 import { PlayerIntensityChart } from "@/features/matches/components/PlayerIntensityChart";
 import { PlayerKpiGrid } from "@/features/matches/components/PlayerKpiGrid";
 import { PlayerPerformanceTimeline } from "@/features/matches/components/PlayerPerformanceTimeline";
@@ -141,6 +142,8 @@ export function PlayerMatchDetail({
         </div>
       </Card>
 
+      <AnalysisQualityPanel quality={detail.analysis_quality} />
+
       {player.analytics_status === "processing" ? (
         <Card className="mt-5">
           <EmptyState
@@ -171,11 +174,16 @@ export function PlayerMatchDetail({
         <Card>
           <h2 className="type-section-title text-slate-950">Position heatmap</h2>
           <p className="mb-4 mt-1 text-sm text-slate-500">
-            Density from normalized player position samples.
+            {player.analysis_quality.physical_metrics_available
+              ? "Measured pitch positions. Empty areas were not observed."
+              : "Camera positions only. This is not a measured pitch heatmap, and it is not metres."}
           </p>
           <PlayerHeatmap
+            lengthM={player.analysis_quality.pitch_length_m}
+            measured={player.analysis_quality.physical_metrics_available}
             processing={player.analytics_status === "processing"}
             samples={detail.position_samples}
+            widthM={player.analysis_quality.pitch_width_m}
           />
         </Card>
         <Card>
@@ -197,7 +205,7 @@ export function PlayerMatchDetail({
           Performance timeline
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Verified sprint, speed, intensity and jersey-change moments.
+          Recorded movement and jersey-change moments. AI event suggestions require review.
         </p>
         <PlayerPerformanceTimeline detail={detail} />
       </Card>

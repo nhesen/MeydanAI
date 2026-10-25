@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +36,11 @@ class PitchConfig:
 class DetectionConfig:
     model: str = "yolo11n.pt"
     pitch_model: str = ""
-    image_size: int = 1280
+    ball_model: str = ""
+    ball_image_size: int = 1280
+    image_size: int = 640
     confidence: float = 0.25
+    ball_tiles: bool = False
     ball_confidence: float = 0.12
     device: str = "auto"
     player_classes: tuple[str, ...] = ("player", "person", "goalkeeper")
@@ -58,6 +62,8 @@ class TrackingConfig:
     reid_max_distance_m: float = 6.0
     max_speed_kmh: float = 36.0
     sprint_kmh: float = 18.0
+    sprint_min_duration_s: float = 1.0
+    sprint_hysteresis_kmh: float = 2.0
     standing_kmh: float = 1.2
 
 
@@ -125,16 +131,33 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             fine_grid_cols=int(pitch.get("fine_grid_cols", 6)),
         ),
         detection=DetectionConfig(
-            model=str(os.environ.get("FOOTBALLVISION_MODEL", detection.get("model", "yolo11n.pt"))),
-            pitch_model=str(detection.get("pitch_model", "")),
-            image_size=int(os.environ.get("FOOTBALLVISION_IMAGE_SIZE", detection.get("image_size", 640))),
+            model=str(
+                os.environ.get(
+                    "FOOTBALLVISION_MODEL", detection.get("model", "yolo11n.pt")
+                )
+            ),
+            ball_model=str(os.environ.get("FOOTBALLVISION_BALL_MODEL", detection.get("ball_model", ""))),
+            ball_image_size=int(detection.get("ball_image_size", 1280)),
+            pitch_model=str(os.environ.get("FOOTBALLVISION_PITCH_MODEL", detection.get("pitch_model", ""))),
+            image_size=int(
+                os.environ.get(
+                    "FOOTBALLVISION_IMAGE_SIZE", detection.get("image_size", 640)
+                )
+            ),
             confidence=float(detection.get("confidence", 0.25)),
+            ball_tiles=bool(detection.get("ball_tiles", False)),
             ball_confidence=float(detection.get("ball_confidence", 0.12)),
-            device=str(os.environ.get("FOOTBALLVISION_DEVICE", detection.get("device", "auto"))),
-            player_classes=tuple(detection.get("player_classes", ["player", "person", "goalkeeper"])),
+            device=str(
+                os.environ.get("FOOTBALLVISION_DEVICE", detection.get("device", "auto"))
+            ),
+            player_classes=tuple(
+                detection.get("player_classes", ["player", "person", "goalkeeper"])
+            ),
             keeper_classes=tuple(detection.get("keeper_classes", ["goalkeeper"])),
             referee_classes=tuple(detection.get("referee_classes", ["referee"])),
-            ball_classes=tuple(detection.get("ball_classes", ["ball", "sports ball", "football"])),
+            ball_classes=tuple(
+                detection.get("ball_classes", ["ball", "sports ball", "football"])
+            ),
         ),
         tracking=TrackingConfig(
             tracker=str(tracking.get("tracker", "bytetrack")),
@@ -148,6 +171,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             reid_max_distance_m=float(tracking.get("reid_max_distance_m", 6.0)),
             max_speed_kmh=float(tracking.get("max_speed_kmh", 36.0)),
             sprint_kmh=float(tracking.get("sprint_kmh", 18.0)),
+            sprint_min_duration_s=float(tracking.get("sprint_min_duration_s", 1.0)),
+            sprint_hysteresis_kmh=float(tracking.get("sprint_hysteresis_kmh", 2.0)),
             standing_kmh=float(tracking.get("standing_kmh", 1.2)),
         ),
         events=EventConfig(
@@ -171,11 +196,68 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         highlight_pre_s=float(data.get("highlight_pre_s", 3.0)),
         highlight_post_s=float(data.get("highlight_post_s", 3.0)),
         sqlite_path=str(
-            os.environ.get("FOOTBALLVISION_SQLITE", data.get("sqlite_path", "var/footballvision.sqlite"))
+            os.environ.get(
+                "FOOTBALLVISION_SQLITE",
+                data.get("sqlite_path", "var/footballvision.sqlite"),
+            )
         ),
-        redis_url=str(os.environ.get("FOOTBALLVISION_REDIS", data.get("redis_url", "redis://localhost:6379/0"))),
-        storage_dir=str(os.environ.get("FOOTBALLVISION_STORAGE", data.get("storage_dir", "var/jobs"))),
+        redis_url=str(
+            os.environ.get(
+                "FOOTBALLVISION_REDIS",
+                data.get("redis_url", "redis://localhost:6379/0"),
+            )
+        ),
+        storage_dir=str(
+            os.environ.get(
+                "FOOTBALLVISION_STORAGE", data.get("storage_dir", "var/jobs")
+            )
+        ),
         camera_mode=str(data.get("camera_mode", "fixed")),
         compensate_camera=bool(data.get("compensate_camera", False)),
         raw=data,
+    )
+
+
+def with_video_calibration(config: AppConfig, payload: dict[str, Any]) -> AppConfig:
+    """Apply one video's calibration without changing shared defaults."""
+    if not isinstance(payload, dict):
+        raise ValueError("Video calibration must be a JSON object.")
+    mode = payload.get("mode", "manual" if payload.get("points") else "relative")
+    if mode not in {"manual", "automatic", "relative"}:
+        raise ValueError("Calibration mode must be manual, automatic or relative.")
+    pitch_mode = payload.get("pitch_mode", config.pitch.mode)
+    if pitch_mode not in {"11v11", "hali_saha", "futsal", "5v5"}:
+        raise ValueError("Unsupported pitch mode.")
+    if mode == "automatic" and pitch_mode != "11v11":
+        raise ValueError("Automatic landmark calibration requires an 11v11 pitch.")
+    points = payload.get("points") or []
+    if mode == "manual" and len(points) != 4:
+        raise ValueError("Manual calibration requires four ordered pitch corners.")
+    if points and (len(points) != 4 or any(
+        not isinstance(point, (list, tuple)) or len(point) != 2 or
+        any(not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1
+            for value in point) for point in points
+    )):
+        raise ValueError("Calibration corners must be four normalized coordinate pairs.")
+    defaults = (105.0, 68.0, 7.32) if pitch_mode == "11v11" else (40.0, 20.0, 3.0)
+    changed_mode = pitch_mode != config.pitch.mode
+    length = float(payload.get("length_m", defaults[0] if changed_mode else config.pitch.length_m))
+    width = float(payload.get("width_m", defaults[1] if changed_mode else config.pitch.width_m))
+    if not math.isfinite(length) or not math.isfinite(width) or not 5 <= length <= 150 or not 5 <= width <= 100:
+        raise ValueError("Pitch dimensions are outside the supported metre range.")
+    if mode == "automatic" and not (90 <= length <= 120 and 45 <= width <= 90):
+        raise ValueError("Automatic 11v11 calibration requires regulation-size pitch dimensions.")
+    camera_mode = payload.get("camera_mode", config.camera_mode)
+    if camera_mode not in {"fixed", "auto", "broadcast"}:
+        raise ValueError("Camera mode must be fixed, auto or broadcast.")
+    if mode == "manual" and camera_mode != "fixed":
+        raise ValueError("Manual corner calibration requires a fixed camera.")
+    return replace(config,
+        pitch=replace(config.pitch, mode=pitch_mode, length_m=length, width_m=width,
+                      goal_width_m=defaults[2] if changed_mode else config.pitch.goal_width_m),
+        tracking=replace(config.tracking, sprint_kmh=(24.0 if pitch_mode == "11v11" else 18.0)
+                         if changed_mode else config.tracking.sprint_kmh),
+        camera_mode=camera_mode,
+        compensate_camera=camera_mode == "broadcast",
+        raw=_merge(config.raw, {"calibration": {"mode": mode, "points": points if mode == "manual" else []}}),
     )

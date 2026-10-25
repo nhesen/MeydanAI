@@ -1,12 +1,16 @@
+import re
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.processing import ProcessingStatus
+from app.schemas.analysis import TrackEvidence
 
 
 class CalibrationMetadata(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     version: str = Field(min_length=1, max_length=50)
     source_frame_width: int = Field(gt=0)
     source_frame_height: int = Field(gt=0)
@@ -19,6 +23,8 @@ class CalibrationMetadata(BaseModel):
 
 
 class AnalyticsMetricsIngest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     rating: float | None = Field(default=None, ge=0, le=10)
     distance_m: float | None = Field(default=None, ge=0)
     avg_speed_kmh: float | None = Field(default=None, ge=0)
@@ -31,13 +37,8 @@ class AnalyticsMetricsIngest(BaseModel):
 
 class PositionSampleIngest(BaseModel):
     timestamp_ms: int = Field(ge=0)
-    x: float
-    y: float
-
-    @field_validator("x", "y")
-    @classmethod
-    def clamp_unit_interval(cls, value: float) -> float:
-        return min(1.0, max(0.0, float(value)))
+    x: float = Field(ge=0, le=1, allow_inf_nan=False)
+    y: float = Field(ge=0, le=1, allow_inf_nan=False)
 
 
 class IntensityBucketIngest(BaseModel):
@@ -53,6 +54,8 @@ class IntensityBucketIngest(BaseModel):
 
 
 class AnalyticsEventIngest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     event_type: Literal[
         "sprint",
         "peak_speed",
@@ -74,12 +77,31 @@ class AnalyticsEventIngest(BaseModel):
         "dribble",
         "save",
         "corner",
+        "goal_kick",
+        "woodwork",
+        "big_chance",
         "free_kick",
         "penalty",
     ]
     timestamp_ms: int = Field(ge=0)
     speed_kmh: float | None = Field(default=None, ge=0)
     title: str = Field(min_length=1, max_length=140)
+    video_url: str | None = Field(default=None, max_length=300)
+    duration_ms: int | None = Field(default=None, gt=0, le=120_000)
+
+    @field_validator("video_url")
+    @classmethod
+    def validate_highlight_media(cls, value: str | None) -> str | None:
+        if (
+            value is not None
+            and re.fullmatch(
+                r"/api/v1/public/media/highlights/[a-z0-9]+(?:-[a-z0-9]+)*\.mp4",
+                value,
+            )
+            is None
+        ):
+            raise ValueError("Highlight media must reference a stored local MP4 clip")
+        return value
 
 
 class TrackMappingIngest(BaseModel):
@@ -118,6 +140,7 @@ class PlayerAnalyticsIngest(BaseModel):
         max_length=500,
     )
     calibration: CalibrationMetadata | None = None
+    track_evidence: TrackEvidence | None = None
     complete_job: bool = False
 
 

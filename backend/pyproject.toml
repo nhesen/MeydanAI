@@ -54,5 +54,5 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["cv2"]
+module = ["cv2", "gdown"]
 ignore_missing_imports = true

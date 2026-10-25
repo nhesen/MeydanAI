@@ -2,9 +2,10 @@ import uuid
 from datetime import date
 from typing import cast
 
-from sqlalchemy import distinct, func, or_, select
+from sqlalchemy import ColumnElement, distinct, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.analysis_metadata import rejected_highlight_ids
 from app.models.domain import (
     Highlight,
     JerseyAssignment,
@@ -207,7 +208,9 @@ class PlatformRepository:
         page: int,
         page_size: int,
     ) -> tuple[list[tuple[Highlight, Match, Player | None]], int]:
-        filters = []
+        filters: list[ColumnElement[bool]] = [
+            Highlight.id.not_in(rejected_highlight_ids(self.session, match_id))
+        ]
         if match_id:
             filters.append(Highlight.match_id == match_id)
         if player_id:
@@ -288,6 +291,7 @@ class PlatformRepository:
             )
             .join(Match, Match.id == PlayerMatchAnalytics.match_id)
             .where(*filters)
+            .where(~Player.display_name.ilike("Detected %"))
             .group_by(Player.id, Player.display_name)
             .having(func.count(distinct(PlayerMatchAnalytics.match_id)) >= minimum_matches)
         )
@@ -342,7 +346,9 @@ class PlatformRepository:
                 PlayerMatchAnalytics.team_id == Team.id,
             )
             .join(Match, Match.id == PlayerMatchAnalytics.match_id)
+            .join(Player, Player.id == PlayerMatchAnalytics.player_id)
             .where(*filters)
+            .where(~Player.display_name.ilike("Detected %"))
             .group_by(Team.id, Team.name)
             .order_by(Team.name)
         )

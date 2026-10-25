@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -33,6 +34,10 @@ class PitchMapper:
     image_points: Array | None = None
     frame_width: int = 0
     frame_height: int = 0
+    estimated: bool = False
+    support_polygon: Array | None = None
+    calibration_source: str = "manual"
+    quality: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_points(
@@ -49,8 +54,21 @@ class PitchMapper:
         pts = np.asarray(points, dtype=np.float32)
         if pts.shape != (4, 2):
             raise ValueError("Calibration requires exactly four pitch corners.")
+        if not np.isfinite(pts).all():
+            raise ValueError("Calibration corners must be finite.")
         if normalized:
+            if np.any(pts < 0) or np.any(pts > 1):
+                raise ValueError(
+                    "Normalized calibration corners must be between 0 and 1."
+                )
             pts = pts * np.array([frame_width, frame_height], dtype=np.float32)
+        contour = np.ascontiguousarray(pts.reshape(-1, 1, 2))
+        area = abs(cv2.contourArea(contour))
+        min_area = max(1.0, frame_width * frame_height * 0.005)
+        if not cv2.isContourConvex(contour) or area < min_area:
+            raise ValueError(
+                "Calibration corners must form a non-degenerate convex quadrilateral in order."
+            )
         world = pitch_template(config.pitch.length_m, config.pitch.width_m)
         matrix = cv2.getPerspectiveTransform(pts, world)
         inverse = cv2.getPerspectiveTransform(world, pts)
@@ -82,9 +100,14 @@ class PitchMapper:
 
     @property
     def calibrated(self) -> bool:
-        return self.matrix is not None
+        return self.matrix is not None and not self.estimated
 
     def to_world(self, x: float, y: float) -> tuple[float, float] | None:
+        if self.support_polygon is not None:
+            import cv2
+
+            if cv2.pointPolygonTest(self.support_polygon, (x, y), True) < -self.frame_width * 0.08:
+                return None
         if self.matrix is None:
             if self.frame_width and self.frame_height:
                 return (
@@ -96,7 +119,10 @@ class PitchMapper:
         projected = self.matrix @ point
         if abs(projected[2]) < 1e-9:
             return None
-        east, north = float(projected[0] / projected[2]), float(projected[1] / projected[2])
+        east, north = (
+            float(projected[0] / projected[2]),
+            float(projected[1] / projected[2]),
+        )
         if -4 <= east <= self.length_m + 4 and -4 <= north <= self.width_m + 4:
             return east, north
         return None
@@ -129,3 +155,28 @@ def detect_visible_pitch(frame: Array) -> list[tuple[float, float]] | None:
     box[:, 1] = np.clip(box[:, 1], 0, height - 1)
     ordered = order_quad(box)
     return [(float(x / width), float(y / height)) for x, y in ordered]
+
+
+def pitch_outline(frame: Array) -> Array | None:
+    """Visible grass outline for rejecting spectators and technical-area staff.
+
+    This is a foreground mask, not metric calibration. When grass cannot be
+    identified (indoor/artificial courts), leave detections unfiltered.
+    """
+    import cv2
+
+    height, width = frame.shape[:2]
+    scale = min(1.0, 480 / width)
+    small = cv2.resize(
+        frame, (max(1, round(width * scale)), max(1, round(height * scale)))
+    )
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, (28, 35, 25), (95, 255, 255))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+    largest = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(largest) < mask.size * 0.12:
+        return None
+    return cv2.convexHull(largest).astype(np.float32) / scale

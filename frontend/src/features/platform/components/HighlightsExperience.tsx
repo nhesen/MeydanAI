@@ -52,10 +52,10 @@ export function HighlightsExperience() {
       await Promise.resolve();
       const [matchResult, playerResult] = await Promise.allSettled([
         api.getPlatformMatches(
-          { page: 1, page_size: 100 },
+          { page: 1, page_size: 50 },
           controller.signal,
         ),
-        api.getPlayers({ page: 1, page_size: 100 }, controller.signal),
+        api.getPlayers({ page: 1, page_size: 50 }, controller.signal),
       ]);
       if (controller.signal.aborted) return;
       setMatches(

@@ -22,24 +22,34 @@ import {
   PROCESSING_STATUS,
 } from "@/config/processing";
 import { ApiError, api } from "@/services/api-client";
-import type { ProcessingJob } from "@/types/api";
+import { PitchCalibrationEditor } from "@/features/matches/components/PitchCalibrationEditor";
+import { RELATIVE_CALIBRATION } from "@/lib/calibration";
+import type { ProcessingJob, UploadCalibrationConfig } from "@/types/api";
 
 interface ProcessingJobsPanelProps {
   matchId: string;
   organizerToken?: string | null;
+  onCompleted?: () => void;
 }
 
 export function ProcessingJobsPanel({
   matchId,
   organizerToken,
+  onCompleted,
 }: ProcessingJobsPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadController = useRef<AbortController | null>(null);
+  const previousJobs = useRef<ProcessingJob[]>([]);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [calibration, setCalibration] = useState<UploadCalibrationConfig | null>(RELATIVE_CALIBRATION);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -49,6 +59,7 @@ export function ProcessingJobsPanel({
         signal,
       );
       setJobs(response.data);
+      setRefreshError(null);
     },
     [matchId, organizerToken],
   );
@@ -62,7 +73,7 @@ export function ProcessingJobsPanel({
         await load(controller.signal);
       } catch {
         if (!controller.signal.aborted) {
-          setError("Processing jobs could not be loaded.");
+          setRefreshError("Processing jobs could not be loaded. Refresh to try again.");
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -72,44 +83,101 @@ export function ProcessingJobsPanel({
     return () => controller.abort();
   }, [load]);
 
+  useEffect(() => () => uploadController.current?.abort(), []);
+
+  useEffect(() => {
+    const completed = jobs.some((job) => job.status === "completed" && previousJobs.current.some(
+      (previous) => previous.id === job.id && (previous.status === "queued" || previous.status === "processing"),
+    ));
+    previousJobs.current = jobs;
+    if (completed) onCompleted?.();
+  }, [jobs, onCompleted]);
+
   const hasActiveJob = jobs.some(
     (job) => job.status === "queued" || job.status === "processing",
   );
 
   useEffect(() => {
     if (!hasActiveJob) return;
-    const timer = window.setInterval(() => {
-      void load().catch(() => {
-        setError("Processing status could not be refreshed.");
-      });
+    const controller = new AbortController();
+    let pending = false;
+    const timer = window.setInterval(async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        await load(controller.signal);
+      } catch {
+        if (!controller.signal.aborted) {
+          setRefreshError("Processing status could not be refreshed. Retrying automatically.");
+        }
+      } finally {
+        pending = false;
+      }
     }, 5000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      controller.abort();
+    };
   }, [hasActiveJob, load]);
 
-  async function uploadVideo() {
-    if (!file) return;
-    setUploading(true);
-    setError(null);
+  async function refreshJobs() {
+    setRefreshing(true);
     try {
-      await api.createProcessingJob(matchId, organizerToken, file);
+      await load();
+    } catch {
+      setRefreshError("Processing jobs could not be refreshed. Check your connection and try again.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function selectFile(selected: File | null) {
+    setError(null);
+    setCalibration(RELATIVE_CALIBRATION);
+    if (selected && (!/\.(mp4|m4v|mov|webm)$/i.test(selected.name) || selected.size === 0)) {
+      setError("Select a non-empty MP4, MOV, or WebM video.");
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
-      await load();
+      return;
+    }
+    setFile(selected);
+  }
+
+  async function uploadVideo() {
+    if (!file || !calibration || uploading || hasActiveJob || busyJobId) return;
+    const controller = new AbortController();
+    uploadController.current = controller;
+    setUploading(true);
+    setUploadProgress(0);
+    setError(null);
+    try {
+      const response = await api.createProcessingJob(matchId, organizerToken, file, {
+        signal: controller.signal,
+        onProgress: setUploadProgress,
+        calibration,
+      });
+      setJobs((current) => [response.data, ...current.filter((job) => job.id !== response.data.id)]);
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
     } catch (caught: unknown) {
-      setError(uploadErrorMessage(caught));
+      if (!(caught instanceof DOMException && caught.name === "AbortError")) {
+        setError(uploadErrorMessage(caught));
+      }
     } finally {
+      uploadController.current = null;
       setUploading(false);
     }
   }
 
   async function retryJob(jobId: string) {
+    if (busyJobId || hasActiveJob || uploading) return;
     setBusyJobId(jobId);
     setError(null);
     try {
-      await api.retryProcessingJob(jobId, organizerToken);
-      await load();
+      const response = await api.retryProcessingJob(jobId, organizerToken);
+      setJobs((current) => [response.data, ...current.filter((job) => job.id !== response.data.id)]);
     } catch {
-      setError("The failed processing job could not be retried.");
+      setError("The failed processing job could not be retried. Refresh its status and try again.");
     } finally {
       setBusyJobId(null);
     }
@@ -125,9 +193,14 @@ export function ProcessingJobsPanel({
               Upload match video
             </h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-              MP4, MOV, and WebM are accepted. The local worker tracks movement
-              and writes analytics. If nobody has joined with a jersey yet,
-              temporary detected players are created automatically.
+              Upload an MP4, MOV, or WebM match video to track player movement.
+              Detected players, teams and events are estimates and need review.
+              Temporary player labels do not confirm a person&apos;s identity.
+            </p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Distance and speed require valid pitch calibration. Choose manual
+              corners, standard-pitch keypoints, or relative movement below. AI event suggestions do
+              not confirm goals or update the score.
             </p>
           </div>
           <Upload className="size-6 text-brand-700" aria-hidden="true" />
@@ -140,22 +213,51 @@ export function ProcessingJobsPanel({
             <input
               accept=".mp4,.m4v,.mov,.webm,video/mp4,video/quicktime,video/webm"
               className="block min-h-11 w-full min-w-0 rounded-xl border border-border bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:font-semibold file:text-brand-800"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              disabled={uploading || hasActiveJob || Boolean(busyJobId) || loading}
+              onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
               ref={inputRef}
               type="file"
             />
           </label>
           <Button
-            disabled={!file}
+            disabled={!file || !calibration || hasActiveJob || Boolean(busyJobId) || loading}
             loading={uploading}
             onClick={uploadVideo}
           >
-            Create processing job
+            {uploading ? "Uploading video" : "Upload and analyze"}
           </Button>
         </div>
+        {file ? (
+          <>
+            <p className="mt-3 break-all text-sm text-slate-500">
+              {file.name} · {(file.size / (1024 * 1024)).toFixed(1)} MB
+            </p>
+            <PitchCalibrationEditor key={`${file.name}:${file.size}:${file.lastModified}`} file={file} disabled={uploading || hasActiveJob || Boolean(busyJobId)} onChange={setCalibration} />
+          </>
+        ) : null}
+        {uploading ? (
+          <div className="mt-4" aria-live="polite">
+            <p className="text-sm font-semibold text-slate-700">
+              {uploadProgress < 100
+                ? `Uploading video: ${uploadProgress}%`
+                : "Upload sent. Validating video and creating the analysis job…"}
+            </p>
+            <progress className="mt-2 h-2 w-full accent-brand-700" max={100} value={uploadProgress} />
+            {uploadProgress < 100 ? (
+              <Button className="mt-2" onClick={() => uploadController.current?.abort()} size="sm" variant="ghost">
+                Cancel upload
+              </Button>
+            ) : null}
+          </div>
+        ) : hasActiveJob ? (
+          <p className="mt-4 rounded-xl bg-brand-50 p-3 text-sm text-brand-800" role="status">
+            This match is being analyzed. Progress below updates automatically; another video can be uploaded when it finishes.
+          </p>
+        ) : null}
       </Card>
 
       {error ? <ErrorState compact message={error} title="Processing action failed" /> : null}
+      {refreshError ? <ErrorState compact message={refreshError} onRetry={() => void refreshJobs()} title="Status unavailable" /> : null}
 
       <Card>
         <div className="flex items-center justify-between gap-3">
@@ -169,7 +271,8 @@ export function ProcessingJobsPanel({
           </div>
           <Button
             aria-label="Refresh processing jobs"
-            onClick={() => void load()}
+            loading={refreshing}
+            onClick={() => void refreshJobs()}
             size="sm"
             variant="ghost"
           >
@@ -194,6 +297,7 @@ export function ProcessingJobsPanel({
             {jobs.map((job) => (
               <ProcessingJobCard
                 busy={busyJobId === job.id}
+                retryDisabled={hasActiveJob || uploading || Boolean(busyJobId)}
                 job={job}
                 key={job.id}
                 matchId={matchId}
@@ -212,11 +316,13 @@ function ProcessingJobCard({
   job,
   matchId,
   onRetry,
+  retryDisabled,
 }: {
   busy: boolean;
   job: ProcessingJob;
   matchId: string;
   onRetry: () => void;
+  retryDisabled: boolean;
 }) {
   const status = PROCESSING_STATUS[job.status];
   const timestamp = job.failed_at ?? job.completed_at ?? job.started_at ?? job.created_at;
@@ -288,6 +394,7 @@ function ProcessingJobCard({
           ) : null}
           <Button
             className="mt-3"
+            disabled={retryDisabled}
             loading={busy}
             onClick={onRetry}
             size="sm"
@@ -323,7 +430,11 @@ function uploadErrorMessage(caught: unknown): string {
       return "Organizer access has expired for this match.";
     case "UPLOAD_FAILED":
       return "The video could not be stored. Try again in a moment.";
+    case "INVALID_CALIBRATION":
+      return caught.problem?.detail ?? "Check the pitch dimensions and corner selection.";
     default:
+      if (caught.status === 413) return "The selected video exceeds the server upload limit.";
+      if (caught.status === 401 || caught.status === 403) return "Organizer access is required. Sign in as the match owner or use the browser where it was created.";
       return "The video could not be uploaded.";
   }
 }

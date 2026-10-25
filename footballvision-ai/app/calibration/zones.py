@@ -65,5 +65,5 @@ class PitchZones:
         if not (cy - half - 0.3 <= y <= cy + half + 0.3):
             return False
         if left:
-            return x <= 0.35
-        return x >= self.length_m - 0.35
+            return x <= -0.05
+        return x >= self.length_m + 0.05

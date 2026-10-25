@@ -44,14 +44,25 @@ def process_job(api: WorkerApi, video_root: Path, job_id: uuid.UUID) -> None:
     assignments = [WorkerAssignmentContext.model_validate(item) for item in context["assignments"]]
     video_path = (video_root / context["source_reference"]).resolve()
     try:
-        _report(api, job_id, ProcessingStage.VALIDATING, 8)
-        if not str(video_path).startswith(str(video_root.resolve())) or not video_path.is_file():
+        try:
+            _report(api, job_id, ProcessingStage.VALIDATING, 8, claim=True)
+        except WorkerApiError as error:
+            if error.status == 409:
+                return
+            raise
+        if not video_path.is_relative_to(video_root.resolve()) or not video_path.is_file():
             logger.warning("video_missing path=%s root=%s", video_path, video_root)
             _fail(api, job_id, "INVALID_VIDEO")
             return
         _report(api, job_id, ProcessingStage.PREPROCESSING, 18)
         _report(api, job_id, ProcessingStage.DETECTING_PLAYERS, 32)
-        tracks = analyze_video(video_path)
+        from app.worker.footballvision import analysis_progress
+
+        def report_analysis(progress: int) -> None:
+            _report(api, job_id, ProcessingStage.DETECTING_PLAYERS, 32 + int(progress * 0.22))
+
+        with analysis_progress(report_analysis, context.get("calibration_config")):
+            tracks = analyze_video(video_path)
         if not tracks:
             _fail(api, job_id, "NO_MOTION_DETECTED")
             return
@@ -92,6 +103,9 @@ def process_job(api: WorkerApi, video_root: Path, job_id: uuid.UUID) -> None:
             _fail(api, job_id, "PROCESSING_FAILED")
         except WorkerApiError:
             return
+    except Exception:
+        logger.exception("local_video_job_unexpected_failure", extra={"job_id": str(job_id)})
+        _fail(api, job_id, "PROCESSING_FAILED")
 
 
 def _ingest_payload(
@@ -104,6 +118,16 @@ def _ingest_payload(
         "player_id": str(assignment.player_id),
         "team_id": str(assignment.team_id),
         "provider_track_id": track.track_id,
+        "track_evidence": track.track_evidence,
+        "track_mappings": [
+            {
+                "provider_track_id": track.track_id,
+                "mapping_status": "mapped",
+                "player_id": str(assignment.player_id),
+                "team_id": str(assignment.team_id),
+                "observed_jersey": track.jersey_number,
+            }
+        ],
         "metrics": {
             "rating": track.rating,
             "distance_m": track.distance_m,
@@ -132,22 +156,31 @@ def _ingest_payload(
                 "timestamp_ms": stamp,
                 "speed_kmh": speed,
                 "title": title,
+                **track.event_media.get(stamp, {}),
             }
             for event_type, stamp, speed, title in track.events
         ],
-        "calibration": {
+        "calibration": track.calibration
+        or {
             "version": "local-motion-v1",
             "source_frame_width": track.frame_width,
             "source_frame_height": track.frame_height,
-            "pitch_length_m": 105,
-            "pitch_width_m": 68,
+            "pitch_length_m": 40,
+            "pitch_width_m": 20,
             "transform_metadata": {"method": "normalized-frame"},
         },
         "complete_job": complete,
     }
 
 
-def _report(api: WorkerApi, job_id: uuid.UUID, stage: ProcessingStage, progress: int) -> None:
+def _report(
+    api: WorkerApi,
+    job_id: uuid.UUID,
+    stage: ProcessingStage,
+    progress: int,
+    *,
+    claim: bool = False,
+) -> None:
     status = (
         ProcessingStatus.PROCESSING
         if stage != ProcessingStage.COMPLETED
@@ -159,7 +192,8 @@ def _report(api: WorkerApi, job_id: uuid.UUID, stage: ProcessingStage, progress:
             "status": status.value,
             "stage": stage.value,
             "progress": progress,
-            "provider_run_id": "local-motion-worker",
+            "provider_run_id": f"local-video-worker:{job_id}",
+            **({"expected_status": ProcessingStatus.QUEUED.value} if claim else {}),
         },
     )
 

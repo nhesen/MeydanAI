@@ -87,7 +87,7 @@ export function PlayerDirectoryExperience() {
   return (
     <PageContainer className="max-w-6xl">
       <PageHeader
-        description="Global player identities with verified recent match context."
+        description="Player profiles and temporary tracked players with recent match context."
         eyebrow="Performance directory"
         title="Players"
       />

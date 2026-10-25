@@ -24,9 +24,9 @@ def _hist_corr(a: list[float] | None, b: list[float] | None) -> float:
 
 
 def _distance(a: TrackSample, b: TrackSample) -> float:
-    if a.world is not None and b.world is not None:
+    if a.calibrated and b.calibrated and a.world is not None and b.world is not None:
         return float(np.hypot(a.world[0] - b.world[0], a.world[1] - b.world[1]))
-    return float(np.hypot(a.pixel[0] - b.pixel[0], a.pixel[1] - b.pixel[1])) / 40.0
+    return float(np.hypot(a.pixel[0] - b.pixel[0], a.pixel[1] - b.pixel[1])) / max(1, (a.bbox.height + b.bbox.height) / 2) * 1.8
 
 
 @dataclass
@@ -36,7 +36,10 @@ class IdentityRepair:
     config: AppConfig
 
     def merge(self, tracks: dict[int, PlayerTrack]) -> dict[int, PlayerTrack]:
-        ordered = sorted(tracks.values(), key=lambda item: item.samples[0].time_s if item.samples else 0)
+        ordered = sorted(
+            tracks.values(),
+            key=lambda item: item.samples[0].time_s if item.samples else 0,
+        )
         survivors: dict[int, PlayerTrack] = {}
         for track in ordered:
             if not track.samples:
@@ -52,17 +55,21 @@ class IdentityRepair:
                 partner.team = track.team
         return survivors
 
-    def _best_partner(self, track: PlayerTrack, survivors: dict[int, PlayerTrack]) -> PlayerTrack | None:
+    def _best_partner(
+        self, track: PlayerTrack, survivors: dict[int, PlayerTrack]
+    ) -> PlayerTrack | None:
         first = track.samples[0]
         best: tuple[float, PlayerTrack] | None = None
         for candidate in survivors.values():
+            if candidate.segment_id != track.segment_id:
+                continue
             if candidate.role != track.role:
                 continue
             last = candidate.last
             if last is None:
                 continue
             gap = first.time_s - last.time_s
-            if gap < -0.05 or gap > self.config.tracking.lost_track_buffer / 12:
+            if gap <= 0 or gap > self.config.tracking.lost_track_buffer / 12:
                 continue
             if (
                 candidate.team not in {TeamId.UNKNOWN, track.team}
@@ -72,9 +79,25 @@ class IdentityRepair:
             dist = _distance(last, first)
             if dist > self.config.tracking.reid_max_distance_m:
                 continue
-            appearance = _hist_corr(last.color_hist, first.color_hist)
+            last_hist = next(
+                (
+                    sample.color_hist
+                    for sample in reversed(candidate.samples)
+                    if sample.color_hist
+                ),
+                None,
+            )
+            first_hist = next(
+                (sample.color_hist for sample in track.samples if sample.color_hist),
+                None,
+            )
+            appearance = _hist_corr(last_hist, first_hist)
             motion = max(0.0, 1.0 - dist / self.config.tracking.reid_max_distance_m)
-            color = 1.0 if candidate.team == track.team and track.team is not TeamId.UNKNOWN else 0.4
+            color = (
+                1.0
+                if candidate.team == track.team and track.team is not TeamId.UNKNOWN
+                else 0.4
+            )
             score = (
                 self.config.tracking.reid_hist_weight * max(appearance, 0.0)
                 + self.config.tracking.reid_motion_weight * motion

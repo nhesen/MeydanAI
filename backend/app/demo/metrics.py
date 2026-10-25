@@ -67,6 +67,8 @@ def ground_point(
     if calibration is None or matrix is None:
         return None
     if calibration.homography is not None:
+        if calibration.frame_width is None or calibration.frame_height is None:
+            return None
         pixel = np.array(
             [x * float(calibration.frame_width), y * float(calibration.frame_height), 1.0]
         )

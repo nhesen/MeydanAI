@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import cv2
@@ -9,12 +11,22 @@ from app.core.types import EventType, MatchEvent, PlayerTrack
 
 HIGHLIGHT_TYPES = {
     EventType.GOAL,
-    EventType.SHOT,
-    EventType.SHOT_ON_TARGET,
-    EventType.ASSIST,
-    EventType.SAVE,
-    EventType.TACKLE,
+    EventType.BIG_CHANCE,
 }
+
+
+def highlight_events(events: list[MatchEvent]) -> list[MatchEvent]:
+    """Goals and big chances only. A chance that is the goal itself is one clip."""
+    goal_times = [event.time_s for event in events if event.event_type is EventType.GOAL]
+    return [
+        event
+        for event in events
+        if event.event_type in HIGHLIGHT_TYPES
+        and not (
+            event.event_type is EventType.BIG_CHANCE
+            and any(abs(event.time_s - goal_time) <= 2.0 for goal_time in goal_times)
+        )
+    ]
 
 
 def cut_highlights(
@@ -26,12 +38,13 @@ def cut_highlights(
 ) -> list[dict]:
     output_dir.mkdir(parents=True, exist_ok=True)
     clips: list[dict] = []
-    chosen = [event for event in events if event.event_type in HIGHLIGHT_TYPES]
+    chosen = highlight_events(events)
     for index, event in enumerate(chosen):
         start = max(0.0, event.time_s - config.highlight_pre_s)
         end = event.time_s + config.highlight_post_s
         dest = output_dir / f"{index:03d}_{event.event_type.value}_{event.frame}.mp4"
-        _extract(video_path, dest, start, end, fps)
+        if not _extract(video_path, dest, start, end, fps):
+            continue
         event.clip_path = str(dest)
         clips.append(
             {
@@ -59,18 +72,65 @@ def cut_player_clips(
         start = track.samples[0].time_s
         end = min(track.samples[-1].time_s, start + 12)
         dest = output_dir / f"player_{track.track_id}.mp4"
-        _extract(video_path, dest, start, end, fps)
-        paths[track.track_id] = str(dest)
+        if _extract(video_path, dest, start, end, fps):
+            paths[track.track_id] = str(dest)
     return paths
 
 
-def _extract(source: Path, dest: Path, start: float, end: float, fps: float) -> None:
+def _extract(source: Path, dest: Path, start: float, end: float, fps: float) -> bool:
+    if end <= start:
+        return False
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        try:
+            completed = subprocess.run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-ss",
+                    f"{start:.3f}",
+                    "-i",
+                    str(source),
+                    "-t",
+                    f"{end - start:.3f}",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "23",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-movflags",
+                    "+faststart",
+                    "-an",
+                    str(dest),
+                ],
+                capture_output=True,
+                check=False,
+                timeout=120,
+            )
+            if (
+                completed.returncode == 0
+                and dest.is_file()
+                and dest.stat().st_size > 1000
+            ):
+                return True
+        except (OSError, subprocess.TimeoutExpired):
+            pass
     cap = cv2.VideoCapture(str(source))
     if not cap.isOpened():
-        return
+        cap.release()
+        return False
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    writer = cv2.VideoWriter(str(dest), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    writer = cv2.VideoWriter(
+        str(dest), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
+    )
+    if not writer.isOpened():
+        writer.release()
+        cap.release()
+        return False
     start_frame = int(start * fps)
     end_frame = int(end * fps)
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
@@ -83,3 +143,4 @@ def _extract(source: Path, dest: Path, start: float, end: float, fps: float) -> 
         index += 1
     writer.release()
     cap.release()
+    return index > start_frame and dest.is_file() and dest.stat().st_size > 1000

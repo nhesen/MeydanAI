@@ -36,6 +36,9 @@ class EventType(str, Enum):
     DRIBBLE = "dribble"
     SAVE = "save"
     CORNER = "corner"
+    GOAL_KICK = "goal_kick"
+    WOODWORK = "woodwork"
+    BIG_CHANCE = "big_chance"
     FREE_KICK = "free_kick"
     PENALTY = "penalty"
 
@@ -103,6 +106,8 @@ class TrackSample:
     color_hist: list[float] | None = None
     with_ball: bool = False
     speed_mps: float | None = None
+    calibrated: bool = True
+    calibration_source: str = "manual"
 
 
 @dataclass
@@ -114,6 +119,7 @@ class PlayerTrack:
     name: str | None = None
     samples: list[TrackSample] = field(default_factory=list)
     merged_from: list[int] = field(default_factory=list)
+    segment_id: int = 0
 
     @property
     def last(self) -> TrackSample | None:
@@ -129,6 +135,9 @@ class BallSample:
     confidence: float
     interpolated: bool = False
     velocity_mps: tuple[float, float] | None = None
+    scene_cut: bool = False
+    calibrated: bool = True
+    calibration_source: str = "manual"
 
 
 @dataclass
@@ -173,7 +182,7 @@ class PlayerStats:
     distance_m: float | None
     avg_speed_kmh: float | None
     max_speed_kmh: float | None
-    sprint_count: int
+    sprint_count: int | None
     active_seconds: float
     on_ball_seconds: float
     off_ball_seconds: float
@@ -194,10 +203,13 @@ class PlayerStats:
     dribbles: int
     saves: int
     zone_activity: dict[str, float]
-    rating: float
-    mvp_score: float
+    rating: float | None
+    mvp_score: float | None
     heatmap_path: str | None = None
     highlight_path: str | None = None
+    measured_seconds: float = 0.0
+    calibration_coverage: float = 0.0
+    peak_speed_at_ms: int | None = None
 
 
 @dataclass
@@ -213,6 +225,12 @@ class TeamStats:
     interceptions: int
     corners: int
     distance_m: float | None
+    xg: float | None = None
+    big_chances: int = 0
+    saves: int = 0
+    goal_kicks: int = 0
+    woodwork: int = 0
+    fouls: int | None = None
 
 
 @dataclass

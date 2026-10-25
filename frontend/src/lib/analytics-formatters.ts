@@ -32,3 +32,7 @@ export function formatMatchDate(value: string): string {
     dateStyle: "medium",
   }).format(new Date(value));
 }
+
+export function reviewedEventTitle(title: string, status?: string): string {
+  return status === "confirmed" ? title.replace(/^((?:AI:\s*)?)Possible\s+/i, "$1") : title;
+}

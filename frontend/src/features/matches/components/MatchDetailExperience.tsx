@@ -8,6 +8,7 @@ import {
   Clock3,
   UsersRound,
 } from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -21,8 +22,11 @@ import { Card } from "@/components/ui/Card";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { MATCH_STATUS } from "@/config/match-status";
 import { MatchHeader } from "@/features/matches/components/MatchHeader";
+import { AnalysisQualityPanel } from "@/features/matches/components/AnalysisQualityPanel";
 import { PlayerComparison } from "@/features/matches/components/PlayerComparison";
 import { PlayerRow } from "@/features/matches/components/PlayerRow";
+import { getApiBaseUrl } from "@/lib/env";
+import { reviewedEventTitle } from "@/lib/analytics-formatters";
 import { ApiError, api } from "@/services/api-client";
 import type { MatchDetail, TeamStats } from "@/types/api";
 
@@ -52,13 +56,16 @@ export function MatchDetailExperience({ matchId }: MatchDetailExperienceProps) {
 
   useEffect(() => {
     const controller = new AbortController();
-    api
-      .getPublicMatchDetail(matchId, controller.signal)
-      .then((response) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function refresh() {
+      try {
+        const response = await api.getPublicMatchDetail(matchId, controller.signal);
         setDetail(response.data);
         setError(null);
-      })
-      .catch((caught: unknown) => {
+        if (response.data.match.status === "processing" || response.data.match.status === "live") {
+          timer = setTimeout(() => void refresh(), 5000);
+        }
+      } catch (caught: unknown) {
         if (controller.signal.aborted) return;
         setError(
           caught instanceof ApiError && caught.status === 404
@@ -71,11 +78,18 @@ export function MatchDetailExperience({ matchId }: MatchDetailExperienceProps) {
                 message: "Check your connection and try again.",
               },
         );
-      })
-      .finally(() => {
+        if (!(caught instanceof ApiError) || caught.status >= 500) {
+          timer = setTimeout(() => void refresh(), 10000);
+        }
+      } finally {
         if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+      }
+    }
+    void refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
   }, [attempt, matchId]);
 
   if (loading) return <MatchDetailSkeleton />;
@@ -104,6 +118,7 @@ export function MatchDetailExperience({ matchId }: MatchDetailExperienceProps) {
   return (
     <PageContainer className="max-w-6xl">
       <MatchHeader match={detail.match} now={now} />
+      <AnalysisQualityPanel quality={detail.analysis_quality} />
       <div className="mt-5">
         <Tabs activeId={activeTab} items={tabs} label="Match detail sections" />
       </div>
@@ -122,6 +137,7 @@ export function MatchDetailExperience({ matchId }: MatchDetailExperienceProps) {
 
 function OverviewTab({ detail }: { detail: MatchDetail }) {
   const status = MATCH_STATUS[detail.match.status];
+  const analyzedPlayers = detail.players.filter((player) => player.analytics_status === "available");
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.8fr)]">
       <Card>
@@ -144,7 +160,17 @@ function OverviewTab({ detail }: { detail: MatchDetail }) {
             </p>
           </div>
         </div>
-        {detail.match.status === "scheduled" ? (
+        {analyzedPlayers.length > 0 ? (
+          <div className="mt-5 rounded-xl bg-brand-50 p-4">
+            <p className="font-semibold text-brand-900">Player analytics are ready</p>
+            <p className="mt-1 text-sm leading-6 text-brand-800">
+              {analyzedPlayers.length} players have movement and performance results.
+            </p>
+            <Link className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand-800 hover:text-brand-950" href={`/matches/${detail.match.id}?tab=players`}>
+              View player analytics
+            </Link>
+          </div>
+        ) : detail.match.status === "scheduled" ? (
           <EmptyState
             compact
             description="Player analytics will become available after match data is processed."
@@ -182,7 +208,7 @@ function TimelineTab({ detail }: { detail: MatchDetail }) {
   return (
     <Card>
       <SectionHeader
-        description="Verified match events in chronological order."
+        description="Recorded match events in chronological order. AI suggestions require review."
         title="Timeline"
       />
       {detail.events.length === 0 ? (
@@ -193,7 +219,7 @@ function TimelineTab({ detail }: { detail: MatchDetail }) {
         />
       ) : (
         <ol className="mt-6 space-y-1">
-          {detail.events.map((event) => (
+          {detail.events.filter((event) => event.review_status !== "rejected").map((event) => (
             <li
               className="grid grid-cols-[3rem_1px_minmax(0,1fr)] gap-3"
               key={event.id}
@@ -203,7 +229,8 @@ function TimelineTab({ detail }: { detail: MatchDetail }) {
               </span>
               <span className="bg-border" aria-hidden="true" />
               <div className="pb-5 pt-2">
-                <p className="text-sm font-semibold text-slate-950">{event.title}</p>
+                <p className="text-sm font-semibold text-slate-950">{reviewedEventTitle(event.title, event.review_status)}</p>
+                {event.review_status ? <div className="mt-2"><Badge variant={event.review_status === "confirmed" ? "success" : "warning"}>{event.review_status === "confirmed" ? "Organizer confirmed" : "AI suggestion · needs review"}</Badge></div> : null}
                 {event.description ? (
                   <p className="mt-1 text-sm text-slate-600">{event.description}</p>
                 ) : null}
@@ -283,35 +310,112 @@ function PlayersTab({
   );
 }
 
+function videoOffset(startsAt: string, occurredAt: string | null) {
+  if (!occurredAt) return "";
+  const elapsed = Math.max(
+    0,
+    Math.round((new Date(occurredAt).getTime() - new Date(startsAt).getTime()) / 1000),
+  );
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function HighlightsTab({ detail }: { detail: MatchDetail }) {
-  const filters = ["All", "Goals", "Top Runs", "Key Moments"];
+  const [filter, setFilter] = useState("All");
+  const filters = ["All", "Goals", "Top Runs", "Key Moments"] as const;
+  const visible = detail.highlights.filter((item) => {
+    if (item.review_status === "rejected") return false;
+    if (filter === "Goals") return item.highlight_type === "goal";
+    if (filter === "Top Runs") {
+      return item.highlight_type === "top_run" || item.highlight_type === "sprint";
+    }
+    if (filter === "Key Moments") {
+      return (
+        item.highlight_type === "key_moment" ||
+        item.highlight_type === "ai_detected"
+      );
+    }
+    return true;
+  });
+  const count = (name: (typeof filters)[number]) =>
+    detail.highlights.filter((item) => {
+      if (item.review_status === "rejected") return false;
+      if (name === "Goals") return item.highlight_type === "goal";
+      if (name === "Top Runs") {
+        return item.highlight_type === "top_run" || item.highlight_type === "sprint";
+      }
+      if (name === "Key Moments") {
+        return (
+          item.highlight_type === "key_moment" ||
+          item.highlight_type === "ai_detected"
+        );
+      }
+      return true;
+    }).length;
+
   return (
     <Card>
       <SectionHeader
-        description="Manual and future AI-assisted moments will be organized here."
+        description="Suggested moments from the match video. Review clips to confirm the action."
         title="Highlights"
       />
       <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
-        {filters.map((filter, index) => (
+        {filters.map((name) => (
           <button
             className={`h-9 shrink-0 rounded-full px-4 text-sm font-semibold ${
-              index === 0
+              filter === name
                 ? "bg-brand-100 text-brand-800"
                 : "bg-subtle text-slate-500"
             }`}
-            disabled={index !== 0 || detail.highlights.length === 0}
-            key={filter}
+            disabled={count(name) === 0}
+            key={name}
+            onClick={() => setFilter(name)}
             type="button"
           >
-            {filter}
+            {name}
           </button>
         ))}
       </div>
-      <EmptyState
-        description="No highlights are available for this match yet."
-        icon={Clapperboard}
-        title="No highlights yet"
-      />
+      {visible.length === 0 ? (
+        <EmptyState
+          description="No highlights are available for this match yet."
+          icon={Clapperboard}
+          title="No highlights yet"
+        />
+      ) : (
+        <ul className="mt-5 divide-y divide-border">
+          {visible.map((item) => (
+            <li className="py-3" key={item.id}>
+              {item.video_url ? (
+                <video
+                  className="mb-3 aspect-video w-full rounded-xl bg-slate-950"
+                  controls
+                  playsInline
+                  preload="metadata"
+                  src={
+                    item.video_url.startsWith("http")
+                      ? item.video_url
+                      : `${getApiBaseUrl()}${item.video_url}`
+                  }
+                />
+              ) : null}
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-950">{reviewedEventTitle(item.title, item.review_status)}</p>
+                  <div className="mt-1"><Badge variant={item.review_status === "confirmed" ? "success" : "warning"}>{item.review_status === "confirmed" ? "Organizer confirmed" : "Needs review"}</Badge></div>
+                  <p className="text-sm text-slate-500">
+                    {item.highlight_type.replaceAll("_", " ")}
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-500">
+                  {videoOffset(detail.match.starts_at, item.occurred_at)}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }
@@ -359,6 +463,49 @@ function TeamComparison({
         stat.maximum_speed_kmh === null
           ? "N/A"
           : `${stat.maximum_speed_kmh.toFixed(1)} km/h`,
+    },
+    {
+      label: "Shots",
+      value: (stat) => stat.shots?.toString() ?? "N/A",
+    },
+    {
+      label: "Shots on target",
+      value: (stat) => stat.shots_on_target?.toString() ?? "N/A",
+    },
+    {
+      label: "xG",
+      value: (stat) => (stat.xg == null ? "N/A" : stat.xg.toFixed(2)),
+    },
+    {
+      label: "Big chances",
+      value: (stat) => stat.big_chances?.toString() ?? "N/A",
+    },
+    {
+      label: "Saves",
+      value: (stat) => stat.saves?.toString() ?? "N/A",
+    },
+    {
+      label: "Corners",
+      value: (stat) => stat.corners?.toString() ?? "N/A",
+    },
+    {
+      label: "Goal kicks",
+      value: (stat) => stat.goal_kicks?.toString() ?? "N/A",
+    },
+    {
+      label: "Posts",
+      value: (stat) => stat.woodwork?.toString() ?? "N/A",
+    },
+    {
+      label: "Passes",
+      value: (stat) =>
+        stat.passes == null
+          ? "N/A"
+          : `${stat.accurate_passes ?? 0}/${stat.passes}`,
+    },
+    {
+      label: "Fouls",
+      value: () => "N/A",
     },
     {
       label: "Sprints",

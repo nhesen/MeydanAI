@@ -1,6 +1,6 @@
 home_name: Home
 away_name: Away
-camera_mode: fixed          # fixed | broadcast
+camera_mode: auto           # auto | fixed | broadcast
 compensate_camera: false
 output_fps_cap: 30
 highlight_pre_s: 3.0
@@ -33,6 +33,9 @@ detection:
   pitch_model: ""           # optional YOLO pose/keypoint pitch model
   image_size: 640           # 4 GB GPU üçün 640; 8 GB və yuxarıda 960 və ya 1280
   confidence: 0.25
+  ball_model: models/football-ball-specialist.pt
+  ball_image_size: 1280
+  ball_tiles: true          # overlapping rescue crops for small broadcast balls
   ball_confidence: 0.12
   device: auto              # auto GPU varsa CUDA seçir, yoxdursa CPU
   player_classes: [player, person, goalkeeper]
@@ -52,6 +55,8 @@ tracking:
   reid_max_distance_m: 6.0
   max_speed_kmh: 36.0
   sprint_kmh: 18.0          # lower for 5-a-side; use 24 for 11v11
+  sprint_min_duration_s: 1.0
+  sprint_hysteresis_kmh: 2.0
   standing_kmh: 1.2
 
 events:
@@ -70,6 +75,7 @@ events:
   set_piece_stop_s: 2.2
 
 calibration:
+  mode: relative           # relative | manual | automatic. Empty corners stay relative.
   # Normalized image points for a fixed hali-saha camera, order:
   # near-left (0,0), near-right (length,0), far-right (length,width), far-left (0,width)
   points: []

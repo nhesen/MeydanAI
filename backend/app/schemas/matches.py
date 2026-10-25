@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.analysis import AnalysisQuality, ReviewStatus
+
 AnalyticsStatus = Literal["processing", "available", "unavailable", "failed"]
 
 
@@ -106,6 +108,7 @@ class MatchPlayerResponse(BaseModel):
     activity_count: int | None = None
     peak_speed_at_ms: int | None = None
     analytics_status: AnalyticsStatus = "unavailable"
+    analysis_quality: AnalysisQuality = Field(default_factory=AnalysisQuality)
 
 
 class PositionSampleResponse(BaseModel):
@@ -149,12 +152,16 @@ class PlayerAnalyticsEventResponse(BaseModel):
         "dribble",
         "save",
         "corner",
+        "goal_kick",
+        "woodwork",
+        "big_chance",
         "free_kick",
         "penalty",
     ]
     timestamp_ms: int = Field(ge=0)
     speed_kmh: float | None = Field(default=None, ge=0)
     title: str
+    review_status: ReviewStatus = "pending"
 
 
 class PlayerAnalyticsDetailResponse(BaseModel):
@@ -163,6 +170,7 @@ class PlayerAnalyticsDetailResponse(BaseModel):
     position_samples: list[PositionSampleResponse]
     intensity_buckets: list[IntensityBucketResponse]
     events: list[PlayerAnalyticsEventResponse]
+    analysis_quality: AnalysisQuality = Field(default_factory=AnalysisQuality)
 
 
 class PlayerComparisonResponse(BaseModel):
@@ -177,6 +185,18 @@ class TeamStatsResponse(BaseModel):
     maximum_speed_kmh: float | None = None
     sprint_count: int | None = None
     active_time_seconds: int | None = None
+    shots: int | None = None
+    shots_on_target: int | None = None
+    goals: int | None = None
+    xg: float | None = None
+    big_chances: int | None = None
+    saves: int | None = None
+    corners: int | None = None
+    goal_kicks: int | None = None
+    woodwork: int | None = None
+    passes: int | None = None
+    accurate_passes: int | None = None
+    fouls: int | None = None
 
 
 class TimelineEventResponse(BaseModel):
@@ -195,6 +215,7 @@ class TimelineEventResponse(BaseModel):
     description: str | None
     player_id: uuid.UUID | None
     team_id: uuid.UUID | None
+    review_status: ReviewStatus = "confirmed"
 
 
 class HighlightResponse(BaseModel):
@@ -206,6 +227,7 @@ class HighlightResponse(BaseModel):
     duration_seconds: int | None
     occurred_at: datetime | None
     player_id: uuid.UUID | None
+    review_status: ReviewStatus = "pending"
 
 
 class MatchDetailResponse(BaseModel):
@@ -214,6 +236,7 @@ class MatchDetailResponse(BaseModel):
     team_stats: list[TeamStatsResponse] | None
     events: list[TimelineEventResponse]
     highlights: list[HighlightResponse]
+    analysis_quality: AnalysisQuality = Field(default_factory=AnalysisQuality)
 
 
 class MatchCreatedResponse(BaseModel):

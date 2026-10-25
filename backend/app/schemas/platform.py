@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.analysis import ReviewStatus
 from app.schemas.matches import MatchResponse, TeamResponse
 
 HighlightType = Literal[
@@ -83,6 +84,7 @@ class PlatformHighlightResponse(BaseModel):
     thumbnail_url: str | None
     duration_ms: int | None
     created_at: datetime
+    review_status: ReviewStatus = "pending"
 
 
 class QuickStatsResponse(BaseModel):

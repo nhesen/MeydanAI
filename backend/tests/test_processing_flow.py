@@ -15,6 +15,7 @@ from app.core.database import Base
 from app.core.exceptions import DomainError
 from app.core.processing import ProcessingStage, ProcessingStatus
 from app.schemas.ingestion import (
+    AnalyticsEventIngest,
     AnalyticsMetricsIngest,
     PlayerAnalyticsIngest,
     PositionSampleIngest,
@@ -384,6 +385,65 @@ def test_analytics_ingestion_is_transactional_and_idempotent(
             analytics_payload(assignment.player.id, assignment.team.id, 2000),
         )
     assert reused.value.error_code == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_shot_and_goal_events_become_highlights(session: Session) -> None:
+    match, assignment, job = create_processing_player(session)
+    payload = analytics_payload(assignment.player.id, assignment.team.id)
+    payload.events = [
+        AnalyticsEventIngest(event_type="shot", timestamp_ms=3080, title="shot"),
+        AnalyticsEventIngest(
+            event_type="shot_on_target",
+            timestamp_ms=3080,
+            title="shot on target",
+        ),
+        AnalyticsEventIngest(event_type="goal", timestamp_ms=9000, title="goal"),
+        AnalyticsEventIngest(event_type="dribble", timestamp_ms=1200, title="dribble"),
+    ]
+    AnalyticsIngestionService(session, max_position_samples=100).ingest(
+        job.id,
+        "player-17-highlights",
+        payload,
+    )
+    detail = MatchService(session).get_public_match_detail(match.match.id)
+
+    assert [item.highlight_type for item in detail.highlights] == ["key_moment", "goal"]
+    assert detail.highlights[0].title == "AI: shot"
+    assert detail.highlights[1].title == "AI: goal"
+
+
+def test_big_chance_keeps_its_own_highlight_and_clip(session: Session) -> None:
+    match, assignment, job = create_processing_player(session)
+    payload = analytics_payload(assignment.player.id, assignment.team.id)
+    payload.events = [
+        AnalyticsEventIngest(event_type="shot", timestamp_ms=4000, title="shot"),
+        AnalyticsEventIngest(
+            event_type="big_chance",
+            timestamp_ms=4000,
+            title="big chance",
+            video_url="/api/v1/public/media/highlights/big-chance.mp4",
+        ),
+        AnalyticsEventIngest(event_type="goal", timestamp_ms=9000, title="goal"),
+        AnalyticsEventIngest(
+            event_type="big_chance",
+            timestamp_ms=20000,
+            title="another chance",
+            video_url="/api/v1/public/media/highlights/chance-2.mp4",
+        ),
+    ]
+    AnalyticsIngestionService(session, max_position_samples=100).ingest(
+        job.id,
+        "player-17-big-chances",
+        payload,
+    )
+    detail = MatchService(session).get_public_match_detail(match.match.id)
+    assert [item.title for item in detail.highlights] == [
+        "AI: big chance",
+        "AI: goal",
+        "AI: another chance",
+    ]
+    assert detail.highlights[0].video_url == "/api/v1/public/media/highlights/big-chance.mp4"
+    assert detail.highlights[0].highlight_type == "key_moment"
 
 
 def test_analytics_ingestion_accepts_duplicate_track_mapping(

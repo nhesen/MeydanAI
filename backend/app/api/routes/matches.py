@@ -1,13 +1,21 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.exceptions import DomainError
 from app.core.security import OrganizerTokenHeader, get_optional_user
 from app.models.domain import User
+from app.schemas.analysis import (
+    AnalysisReviewResponse,
+    EventReviewUpdate,
+    IdentityReviewUpdate,
+    UploadCalibrationConfig,
+)
 from app.schemas.common import ApiResponse
 from app.schemas.matches import (
     AssignmentCorrection,
@@ -21,6 +29,7 @@ from app.schemas.matches import (
     MatchStateUpdate,
 )
 from app.schemas.processing import ProcessingJobResponse
+from app.services.analysis_review import AnalysisReviewService
 from app.services.matches import MatchService
 from app.services.processing import ProcessingService
 from app.services.video_storage import LocalVideoStorage
@@ -79,37 +88,54 @@ def update_match_state(
     response_model=ApiResponse[ProcessingJobResponse],
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def create_processing_job(
+def create_processing_job(
     match_id: uuid.UUID,
     session: DatabaseSession,
     user: OptionalUser,
     video: VideoUpload,
+    request: Request,
+    calibration: Annotated[str | None, Form(max_length=8000)] = None,
     organizer_token: OrganizerTokenHeader = None,
 ) -> ApiResponse[ProcessingJobResponse]:
-    MatchService(session).get_organizer_match(match_id, organizer_token, user)
-    settings = get_settings()
-    storage = LocalVideoStorage(settings.video_storage_path)
-    stored = storage.store(
-        video.file,
-        original_filename=video.filename or "",
-        media_type=video.content_type or "",
-        max_size_bytes=settings.max_video_upload_size,
-    )
     try:
-        job = ProcessingService(session).create_job(
-            match_id=match_id,
-            organizer_token=organizer_token,
-            user=user,
-            source_reference=stored.reference,
-            source_media_type=stored.media_type,
-            source_size_bytes=stored.size_bytes,
-            provider=settings.analytics_provider,
+        MatchService(session).get_organizer_match(match_id, organizer_token, user)
+        try:
+            calibration_config = (
+                UploadCalibrationConfig.model_validate_json(calibration)
+                if calibration is not None
+                else UploadCalibrationConfig()
+            )
+        except ValidationError as error:
+            raise DomainError(
+                status=422,
+                title="Invalid calibration",
+                detail=error.errors()[0]["msg"],
+                error_code="INVALID_CALIBRATION",
+            ) from error
+        settings = getattr(request.app.state, "settings", None) or get_settings()
+        storage = LocalVideoStorage(settings.video_storage_path)
+        stored = storage.store(
+            video.file,
+            original_filename=video.filename or "",
+            media_type=video.content_type or "",
+            max_size_bytes=settings.max_video_upload_size,
         )
-    except Exception:
-        storage.delete(stored.reference)
-        raise
+        try:
+            job = ProcessingService(session).create_job(
+                match_id=match_id,
+                organizer_token=organizer_token,
+                user=user,
+                source_reference=stored.reference,
+                source_media_type=stored.media_type,
+                source_size_bytes=stored.size_bytes,
+                provider=settings.analytics_provider,
+                calibration_config=calibration_config,
+            )
+        except Exception:
+            storage.delete(stored.reference)
+            raise
     finally:
-        await video.close()
+        video.file.close()
     return ApiResponse(data=job)
 
 
@@ -124,6 +150,55 @@ def list_processing_jobs(
     organizer_token: OrganizerTokenHeader = None,
 ) -> ApiResponse[list[ProcessingJobResponse]]:
     return ApiResponse(data=ProcessingService(session).list_jobs(match_id, organizer_token, user))
+
+
+@router.get("/{match_id}/analysis-review", response_model=ApiResponse[AnalysisReviewResponse])
+def get_analysis_review(
+    match_id: uuid.UUID,
+    session: DatabaseSession,
+    user: OptionalUser,
+    organizer_token: OrganizerTokenHeader = None,
+) -> ApiResponse[AnalysisReviewResponse]:
+    return ApiResponse(
+        data=AnalysisReviewService(session).get_review(match_id, organizer_token, user)
+    )
+
+
+@router.patch(
+    "/{match_id}/events/{event_id}/review", response_model=ApiResponse[AnalysisReviewResponse]
+)
+def review_analytics_event(
+    match_id: uuid.UUID,
+    event_id: uuid.UUID,
+    payload: EventReviewUpdate,
+    session: DatabaseSession,
+    user: OptionalUser,
+    organizer_token: OrganizerTokenHeader = None,
+) -> ApiResponse[AnalysisReviewResponse]:
+    return ApiResponse(
+        data=AnalysisReviewService(session).review_event(
+            match_id, event_id, payload, organizer_token, user
+        )
+    )
+
+
+@router.patch(
+    "/{match_id}/track-mappings/{mapping_id}/review",
+    response_model=ApiResponse[AnalysisReviewResponse],
+)
+def review_track_identity(
+    match_id: uuid.UUID,
+    mapping_id: uuid.UUID,
+    payload: IdentityReviewUpdate,
+    session: DatabaseSession,
+    user: OptionalUser,
+    organizer_token: OrganizerTokenHeader = None,
+) -> ApiResponse[AnalysisReviewResponse]:
+    return ApiResponse(
+        data=AnalysisReviewService(session).review_identity(
+            match_id, mapping_id, payload, organizer_token, user
+        )
+    )
 
 
 @router.post(

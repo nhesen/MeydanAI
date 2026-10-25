@@ -387,9 +387,11 @@ def test_inflated_motion_analytics_are_clamped_for_display(session: Session) -> 
     assert all(
         event.event_type != "sprint" or (event.speed_kmh or 0) <= 40 for event in detail.events
     )
-    xs = [sample.x for sample in detail.position_samples]
-    assert len(detail.position_samples) >= 8
-    assert max(xs) - min(xs) > 0.3
+    assert [(sample.timestamp_ms, sample.x, sample.y) for sample in detail.position_samples] == [
+        (0, 0.20, 0.50),
+        (250, 0.21, 0.50),
+        (500, 0.80, 0.50),
+    ]
     assert 10 <= detail.intensity_buckets[0].intensity < 100
 
 

@@ -1,5 +1,7 @@
+import re
 import secrets
 import uuid
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
@@ -7,10 +9,16 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.analysis_metadata import (
+    analysis_quality,
+    event_review_status,
+    highlight_review_states,
+    latest_analysis_job,
+    review_metadata,
+)
 from app.core.analytics_bounds import (
     MAX_PLAUSIBLE_STEP_KMH,
     SPRINT_KMH,
-    intensity_from_positions,
     reconstruct_display_path,
     sanitize_events,
     sanitize_intensity,
@@ -52,6 +60,7 @@ from app.schemas.matches import (
     PlayerResponse,
     PositionSampleResponse,
     TeamResponse,
+    TeamStatsResponse,
     TimelineEventResponse,
 )
 from app.services.audit import AuditService
@@ -59,6 +68,101 @@ from app.services.audit import AuditService
 
 def normalize_name(value: str) -> str:
     return " ".join(value.strip().split()).casefold()
+
+
+def aggregate_team_stats(players: list[MatchPlayerResponse]) -> list[TeamStatsResponse] | None:
+    if not any(player.analytics_status == "available" for player in players):
+        return None
+    result: list[TeamStatsResponse] = []
+    for team_id in dict.fromkeys(player.team.id for player in players):
+        members = [player for player in players if player.team.id == team_id]
+        distances = [player.distance_m for player in members if player.distance_m is not None]
+        peaks = [player.max_speed_kmh for player in members if player.max_speed_kmh is not None]
+        sprints = [player.sprint_count for player in members if player.sprint_count is not None]
+        active = [player.active_seconds for player in members if player.active_seconds is not None]
+        timed = [
+            (player.distance_m, player.analysis_quality.measured_seconds)
+            for player in members
+            if player.distance_m is not None
+            and player.analysis_quality.physical_metrics_available
+            and player.analysis_quality.measured_seconds
+        ]
+        measured_seconds = sum(seconds for _, seconds in timed if seconds is not None)
+        result.append(
+            TeamStatsResponse(
+                team_id=team_id,
+                total_distance_m=round(sum(distances), 1) if distances else None,
+                average_speed_kmh=(
+                    round(sum(distance for distance, _ in timed) / measured_seconds * 3.6, 1)
+                    if measured_seconds
+                    else None
+                ),
+                maximum_speed_kmh=max(peaks) if peaks else None,
+                sprint_count=sum(sprints) if sprints else None,
+                active_time_seconds=sum(active) if active else None,
+            )
+        )
+    return result
+
+
+_EVENT_TOTALS = {
+    "shot": "shots",
+    "shot_on_target": "shots_on_target",
+    "goal": "goals",
+    "big_chance": "big_chances",
+    "save": "saves",
+    "corner": "corners",
+    "goal_kick": "goal_kicks",
+    "woodwork": "woodwork",
+    "successful_pass": "accurate_passes",
+    "failed_pass": "failed_passes",
+}
+
+
+def apply_event_totals(
+    stats: list[TeamStatsResponse] | None,
+    players: list[MatchPlayerResponse],
+    analytics_by_player: dict,
+    measured: bool,
+) -> None:
+    """Fill team shot and pass totals from stored events. Fouls stay unknown."""
+    if not stats or not measured:
+        return
+    xg_pattern = re.compile(r"xG\s+([0-9]+(?:\.[0-9]+)?)")
+    by_team = {item.team_id: item for item in stats}
+    counts = {team_id: Counter() for team_id in by_team}
+    xg = {team_id: 0.0 for team_id in by_team}
+    saw_xg = {team_id: False for team_id in by_team}
+    for player in players:
+        analytics = analytics_by_player.get(player.id)
+        if analytics is None or analytics.team_id != player.team.id:
+            continue
+        bucket = counts.get(player.team.id)
+        if bucket is None:
+            continue
+        for event in analytics.events:
+            key = _EVENT_TOTALS.get(event.event_type)
+            if key:
+                bucket[key] += 1
+            if event.event_type == "shot":
+                found = xg_pattern.search(event.title or "")
+                if found:
+                    xg[player.team.id] += float(found.group(1))
+                    saw_xg[player.team.id] = True
+    for team_id, item in by_team.items():
+        bucket = counts[team_id]
+        item.shots = bucket["shots"]
+        item.shots_on_target = bucket["shots_on_target"]
+        item.goals = bucket["goals"]
+        item.big_chances = bucket["big_chances"]
+        item.saves = bucket["saves"]
+        item.corners = bucket["corners"]
+        item.goal_kicks = bucket["goal_kicks"]
+        item.woodwork = bucket["woodwork"]
+        item.accurate_passes = bucket["accurate_passes"]
+        item.passes = bucket["accurate_passes"] + bucket["failed_passes"]
+        item.xg = round(xg[team_id], 2) if saw_xg[team_id] else None
+        item.fouls = None
 
 
 class MatchService:
@@ -133,6 +237,7 @@ class MatchService:
 
     def get_public_match_detail(self, match_id: uuid.UUID) -> MatchDetailResponse:
         match = self._require_match(match_id)
+        highlight_states = highlight_review_states(self.session, match_id)
         assignments = self.repository.list_assignments(match_id)
         analytics_by_player = {
             analytics.player_id: analytics
@@ -195,6 +300,7 @@ class MatchService:
                 )
 
         for player in players.values():
+            player.analysis_quality = analysis_quality(self.session, match_id, player.id)
             player.jersey_history.sort(key=lambda item: item.started_at)
             if player.current_jersey is None and player.jersey_history:
                 player.current_jersey = player.jersey_history[-1].jersey_number
@@ -204,10 +310,16 @@ class MatchService:
             elif match.status == "processing":
                 player.analytics_status = "processing"
 
+        measured = any(
+            player.analysis_quality.physical_metrics_available for player in players.values()
+        )
+        team_stats = aggregate_team_stats(list(players.values()))
+        apply_event_totals(team_stats, list(players.values()), analytics_by_player, measured)
         return MatchDetailResponse(
             match=self.to_match_response(match),
             players=sorted(players.values(), key=lambda item: item.display_name.casefold()),
-            team_stats=None,
+            team_stats=team_stats,
+            analysis_quality=analysis_quality(self.session, match_id),
             events=sorted(events, key=lambda item: item.occurred_at),
             highlights=[
                 HighlightResponse(
@@ -222,6 +334,10 @@ class MatchService:
                     occurred_at=aware(match.starts_at)
                     + timedelta(milliseconds=highlight.timestamp_ms),
                     player_id=highlight.player_id,
+                    review_status=highlight_states.get(
+                        highlight.id,
+                        "pending" if highlight.title.startswith("AI: ") else "confirmed",
+                    ),
                 )
                 for highlight in self.repository.list_highlights(match_id)
             ],
@@ -247,7 +363,9 @@ class MatchService:
                 position_samples=[],
                 intensity_buckets=[],
                 events=[],
+                analysis_quality=player.analysis_quality,
             )
+        reviews = review_metadata(latest_analysis_job(self.session, match_id))
         events = sanitize_events(
             [
                 PlayerAnalyticsEventResponse(
@@ -264,9 +382,13 @@ class MatchService:
                     timestamp_ms=event.timestamp_ms,
                     speed_kmh=event.speed_kmh,
                     title=event.title,
+                    review_status=event_review_status(reviews, event.id),
                 )
                 for event in analytics.events
-            ]
+                if event_review_status(reviews, event.id) != "rejected"
+            ],
+            calibrated=player.analysis_quality.calibrated,
+            sprint_kmh=player.analysis_quality.sprint_threshold_kmh or SPRINT_KMH,
         )
         position_samples = reconstruct_display_path(
             [
@@ -278,34 +400,24 @@ class MatchService:
                 for sample in analytics.position_samples
             ]
         )
-        rebuilt_intensity = intensity_from_positions(position_samples)
-        if rebuilt_intensity:
-            intensity_buckets = [
+        intensity_buckets = sanitize_intensity(
+            [
                 IntensityBucketResponse(
-                    from_minute=from_minute,
-                    to_minute=to_minute,
-                    intensity=intensity,
+                    from_minute=bucket.from_minute,
+                    to_minute=bucket.to_minute,
+                    intensity=bucket.intensity,
                 )
-                for from_minute, to_minute, intensity in rebuilt_intensity
-            ]
-        else:
-            intensity_buckets = sanitize_intensity(
-                [
-                    IntensityBucketResponse(
-                        from_minute=bucket.from_minute,
-                        to_minute=bucket.to_minute,
-                        intensity=bucket.intensity,
-                    )
-                    for bucket in analytics.intensity_buckets
-                ],
-                raw_max_speed_kmh=analytics.max_speed_kmh,
-            )
+                for bucket in analytics.intensity_buckets
+            ],
+            raw_max_speed_kmh=analytics.max_speed_kmh,
+        )
         return PlayerAnalyticsDetailResponse(
             match=detail.match,
             player=player,
             position_samples=position_samples,
             intensity_buckets=intensity_buckets,
             events=events,
+            analysis_quality=player.analysis_quality,
         )
 
     def compare_players(
@@ -661,7 +773,10 @@ class MatchService:
         player: MatchPlayerResponse,
         analytics: PlayerMatchAnalytics,
     ) -> None:
-        event_sprints = MatchService._plausible_sprint_count(list(analytics.events))
+        event_sprints = MatchService._plausible_sprint_count(
+            list(analytics.events),
+            player.analysis_quality.sprint_threshold_kmh or SPRINT_KMH,
+        )
         metrics = sanitize_player_metrics(
             rating=analytics.rating,
             distance_m=analytics.distance_m,
@@ -672,6 +787,7 @@ class MatchService:
             activity_count=analytics.activity_count,
             peak_speed_at_ms=analytics.peak_speed_at_ms,
             event_sprint_count=event_sprints or None,
+            calibrated=player.analysis_quality.calibrated,
         )
         player.rating = metrics.rating
         player.distance_m = metrics.distance_m
@@ -684,13 +800,13 @@ class MatchService:
         player.analytics_status = cast(AnalyticsStatus, analytics.status)
 
     @staticmethod
-    def _plausible_sprint_count(events: list[object]) -> int | None:
+    def _plausible_sprint_count(events: list[object], sprint_kmh: float = SPRINT_KMH) -> int | None:
         count = 0
         for event in events:
             speed = getattr(event, "speed_kmh", None)
             if getattr(event, "event_type", None) != "sprint":
                 continue
-            if speed is None or speed < SPRINT_KMH or speed > MAX_PLAUSIBLE_STEP_KMH:
+            if speed is None or speed < sprint_kmh or speed > MAX_PLAUSIBLE_STEP_KMH:
                 continue
             count += 1
         return count or None

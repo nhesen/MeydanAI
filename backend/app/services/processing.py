@@ -3,6 +3,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import cast
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import DomainError
@@ -15,6 +16,7 @@ from app.core.processing import (
 from app.core.tokens import aware
 from app.models.domain import JerseyAssignment, Player, ProcessingJob, User
 from app.repositories.processing import ProcessingRepository
+from app.schemas.analysis import UploadCalibrationConfig
 from app.schemas.processing import (
     DetectedRosterRequest,
     ProcessingJobResponse,
@@ -79,8 +81,10 @@ class ProcessingService:
         source_media_type: str,
         source_size_bytes: int,
         provider: str,
+        calibration_config: UploadCalibrationConfig | None = None,
     ) -> ProcessingJobResponse:
         MatchService(self.session).get_organizer_match(match_id, organizer_token, user)
+        self._ensure_no_active_job(match_id)
         job = ProcessingJob(
             match_id=match_id,
             status=ProcessingStatus.QUEUED.value,
@@ -91,6 +95,11 @@ class ProcessingService:
             source_media_type=source_media_type,
             source_size_bytes=source_size_bytes,
             provider=provider,
+            calibration_metadata={
+                "upload_config": (calibration_config or UploadCalibrationConfig()).model_dump(
+                    mode="json"
+                )
+            },
         )
         self.repository.add(job)
         self.session.commit()
@@ -126,6 +135,11 @@ class ProcessingService:
     ) -> ProcessingJobResponse:
         job = self._require_job(job_id, for_update=True)
         current_status = ProcessingStatus(job.status)
+        if payload.expected_status is not None and current_status != payload.expected_status:
+            raise self._conflict(
+                "The job state changed before this update. Refresh the job before retrying.",
+                "JOB_STATE_CONFLICT",
+            )
         if payload.status != current_status and not can_transition(current_status, payload.status):
             raise self._conflict(
                 f"Cannot transition processing job from {current_status.value} "
@@ -152,6 +166,23 @@ class ProcessingService:
                 "INVALID_JOB_PROGRESS",
             )
 
+        if payload.expected_status is not None:
+            claimed_id = self.session.scalar(
+                update(ProcessingJob)
+                .where(
+                    ProcessingJob.id == job.id,
+                    ProcessingJob.status == payload.expected_status.value,
+                )
+                .values(status=payload.status.value)
+                .returning(ProcessingJob.id)
+                .execution_options(synchronize_session=False)
+            )
+            if claimed_id is None:
+                self.session.rollback()
+                raise self._conflict(
+                    "The job state changed before this update. Refresh the job before retrying.",
+                    "JOB_STATE_CONFLICT",
+                )
         now = datetime.now(UTC)
         job.status = payload.status.value
         job.stage = payload.stage.value
@@ -188,6 +219,7 @@ class ProcessingService:
                 "Only failed processing jobs can be retried.",
                 "JOB_NOT_RETRYABLE",
             )
+        self._ensure_no_active_job(failed_job.match_id)
         retry = ProcessingJob(
             match_id=failed_job.match_id,
             retry_of_id=failed_job.id,
@@ -199,6 +231,9 @@ class ProcessingService:
             source_media_type=failed_job.source_media_type,
             source_size_bytes=failed_job.source_size_bytes,
             provider=failed_job.provider,
+            calibration_metadata={
+                "upload_config": (failed_job.calibration_metadata or {}).get("upload_config", {})
+            },
         )
         self.repository.add(retry)
         self.session.commit()
@@ -242,6 +277,9 @@ class ProcessingService:
             source_reference=job.source_reference,
             status=cast(ProcessingStatus, job.status),
             assignments=assignments,
+            calibration_config=UploadCalibrationConfig.model_validate(
+                (job.calibration_metadata or {}).get("upload_config", {})
+            ),
         )
 
     def ensure_detected_roster(
@@ -264,7 +302,8 @@ class ProcessingService:
             )
         home_count = min(11, (payload.track_count + 1) // 2)
         away_count = min(11, max(0, payload.track_count - home_count))
-        started_at = max(datetime.now(UTC), aware(match.starts_at))
+        # Detected labels describe the uploaded recording, not the later processing time.
+        started_at = aware(match.starts_at)
         for index in range(home_count):
             self._add_detected_player(match.id, home.team_id, "home", index + 1, started_at)
         for index in range(away_count):
@@ -315,6 +354,15 @@ class ProcessingService:
             )
         return job
 
+    def _ensure_no_active_job(self, match_id: uuid.UUID) -> None:
+        # Serialize uploads/retries for one match so two analyses cannot overwrite each other.
+        self.repository.lock_match(match_id)
+        if self.repository.get_active_job(match_id) is not None:
+            raise self._conflict(
+                "This match already has an analysis queued or running. Wait for it to finish.",
+                "MATCH_PROCESSING_ACTIVE",
+            )
+
     @staticmethod
     def to_response(job: ProcessingJob) -> ProcessingJobResponse:
         return ProcessingJobResponse(
@@ -331,6 +379,9 @@ class ProcessingService:
             completed_at=job.completed_at,
             failed_at=job.failed_at,
             error_code=job.error_code,
+            calibration_config=UploadCalibrationConfig.model_validate(
+                (job.calibration_metadata or {}).get("upload_config", {})
+            ),
             error_message=(
                 SAFE_PROCESSING_ERRORS.get(
                     job.error_code,

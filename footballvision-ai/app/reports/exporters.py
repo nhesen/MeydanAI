@@ -14,6 +14,7 @@ def export_tables(
     teams: list[TeamStats],
     events: list[MatchEvent],
     possession: dict[str, float],
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     player_path = output_dir / "player_stats.csv"
@@ -33,6 +34,10 @@ def export_tables(
                 "avg_speed_kmh": item.avg_speed_kmh,
                 "max_speed_kmh": item.max_speed_kmh,
                 "sprint_count": item.sprint_count,
+                "active_seconds": item.active_seconds,
+                "measured_seconds": item.measured_seconds,
+                "calibration_coverage": round(item.calibration_coverage, 4),
+                "peak_speed_at_ms": item.peak_speed_at_ms,
                 "on_ball_seconds": item.on_ball_seconds,
                 "off_ball_seconds": item.off_ball_seconds,
                 "possession_pct": item.possession_pct,
@@ -72,20 +77,35 @@ def export_tables(
                 "interceptions": item.interceptions,
                 "corners": item.corners,
                 "distance_m": item.distance_m,
+                "xg": item.xg,
+                "big_chances": item.big_chances,
+                "saves": item.saves,
+                "goal_kicks": item.goal_kicks,
+                "woodwork": item.woodwork,
+                "fouls": item.fouls,
             }
             for item in teams
         ],
     )
     _write_csv(event_path, [event.to_dict() for event in events])
     summary: dict[str, Any] = {
+        **(metadata or {}),
         "possession": possession,
         "score": {
-            "home": next((item.goals for item in teams if item.team.value == "home"), 0),
-            "away": next((item.goals for item in teams if item.team.value == "away"), 0),
+            "home": next(
+                (item.goals for item in teams if item.team.value == "home"), 0
+            ),
+            "away": next(
+                (item.goals for item in teams if item.team.value == "away"), 0
+            ),
         },
         "leaders": _leaders(players),
         "player_count": len(players),
         "event_count": len(events),
+        "not_measured": {
+            "fouls": "A single camera cannot see contact or the referee decision.",
+            "crossbar": "Pitch coordinates have no ball height, so only a goal post is counted as woodwork.",
+        },
     }
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return {
@@ -102,11 +122,15 @@ def _leaders(players: list[PlayerStats]) -> dict[str, Any]:
         if not valid:
             return None
         winner = max(valid, key=metric)
-        return {"player_id": winner.track_id, "name": winner.name, "value": metric(winner)}
+        return {
+            "player_id": winner.track_id,
+            "name": winner.name,
+            "value": metric(winner),
+        }
 
     return {
-        "most_distance": pick("distance", lambda item: item.distance_m or 0),
-        "fastest": pick("speed", lambda item: item.max_speed_kmh or 0),
+        "most_distance": pick("distance", lambda item: item.distance_m),
+        "fastest": pick("speed", lambda item: item.max_speed_kmh),
         "most_passes": pick("passes", lambda item: item.passes),
         "most_shots": pick("shots", lambda item: item.shots),
         "mvp": pick("mvp", lambda item: item.mvp_score),

@@ -49,8 +49,18 @@ export function MatchCreateForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    if (form.venue.trim().length < 2 || !form.teamA.trim() || !form.teamB.trim()) {
+      setError("Enter a venue and a name for each team.");
+      return;
+    }
     if (form.teamA.trim().toLowerCase() === form.teamB.trim().toLowerCase()) {
       setError("Team A and Team B must be different.");
+      return;
+    }
+    const startsAt = new Date(form.startsAt);
+    const endsAt = form.endsAt ? new Date(form.endsAt) : null;
+    if (!Number.isFinite(startsAt.getTime()) || (endsAt && (!Number.isFinite(endsAt.getTime()) || endsAt <= startsAt))) {
+      setError("Choose a valid start time and an expected end after the start.");
       return;
     }
     setLoading(true);
@@ -58,10 +68,8 @@ export function MatchCreateForm() {
       const response = await api.createMatch({
         title: form.title.trim() || null,
         venue_name: form.venue.trim(),
-        starts_at: new Date(form.startsAt).toISOString(),
-        expected_ends_at: form.endsAt
-          ? new Date(form.endsAt).toISOString()
-          : null,
+        starts_at: startsAt.toISOString(),
+        expected_ends_at: endsAt?.toISOString() ?? null,
         team_a_name: form.teamA.trim(),
         team_b_name: form.teamB.trim(),
       });
@@ -86,15 +94,20 @@ export function MatchCreateForm() {
   }
 
   async function copyLink() {
-    await navigator.clipboard.writeText(joinUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(joinUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError("The join link could not be copied. Select and copy the displayed link manually.");
+    }
   }
 
   if (created) {
     return (
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Card>
+          {error ? <ErrorState compact message={error} title="Link could not be copied" /> : null}
           <Badge dot variant="success">
             Match created
           </Badge>

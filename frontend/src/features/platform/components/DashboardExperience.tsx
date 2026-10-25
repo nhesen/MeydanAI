@@ -259,7 +259,7 @@ export function DashboardExperience() {
             <Card className="mt-4" padding="none">
               <EmptyState
                 compact
-                description="Verified manual or AI-generated highlights will appear here."
+                description="Manual highlights and AI-suggested moments will appear here."
                 icon={Clapperboard}
                 title="No highlights yet"
               />

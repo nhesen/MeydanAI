@@ -44,7 +44,10 @@ def lab_median(frame: Array, bbox: BBox) -> Array | None:
     import cv2
 
     lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
-    return np.median(lab, axis=0).astype(np.float32)
+    feature = np.median(lab, axis=0).astype(np.float32)
+    # Shirt chroma is more stable than brightness across sun and shadow.
+    feature[0] *= 0.2
+    return feature
 
 
 class TeamAssigner:
@@ -66,14 +69,17 @@ class TeamAssigner:
             return
         distances = np.linalg.norm(self.centers - feature, axis=1)
         winner = int(np.argmin(distances))
-        if float(distances[winner]) <= 55 and abs(float(distances[0] - distances[1])) >= 10:
+        if (
+            float(distances[winner]) <= 55
+            and abs(float(distances[0] - distances[1])) >= 10
+        ):
             self.votes[track_id][winner] += 1
 
     def fit(self) -> bool:
         samples = [
             np.median(values, axis=0)
             for track_id, values in self.features.items()
-            if len(values) >= 2 and self.roles.get(track_id) is not Role.REFEREE
+            if len(values) >= 2 and self.roles.get(track_id) is Role.PLAYER
         ]
         if len(samples) < 4:
             return False
@@ -83,11 +89,15 @@ class TeamAssigner:
             second = int(np.argmax(np.linalg.norm(data - data[first], axis=1)))
             centers = data[[first, second]].copy()
             for _ in range(12):
-                labels = np.linalg.norm(data[:, None, :] - centers[None, :, :], axis=2).argmin(axis=1)
+                labels = np.linalg.norm(
+                    data[:, None, :] - centers[None, :, :], axis=2
+                ).argmin(axis=1)
                 groups = [data[labels == index] for index in range(2)]
                 if any(len(group) < 2 for group in groups):
                     break
-                updated = np.array([np.median(group, axis=0) for group in groups], dtype=np.float32)
+                updated = np.array(
+                    [np.median(group, axis=0) for group in groups], dtype=np.float32
+                )
                 if np.allclose(updated, centers):
                     centers = updated
                     break
@@ -103,7 +113,15 @@ class TeamAssigner:
                 best = score, centers
         if best is None:
             return False
-        self.centers = best[1][np.argsort(best[1][:, 0])]
+        updated = best[1]
+        if self.centers is None:
+            updated = updated[np.argsort(updated[:, 0])]
+        elif np.linalg.norm(updated - self.centers) > np.linalg.norm(
+            updated[::-1] - self.centers
+        ):
+            updated = updated[::-1]
+        self.centers = updated
+        self.votes.clear()
         for track_id, values in self.features.items():
             for feature in values:
                 self.observe(track_id, feature, self.roles.get(track_id, Role.PLAYER))

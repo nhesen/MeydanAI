@@ -104,9 +104,7 @@ def analyze(
             if pitch_model is not None and (
                 frame_index == 0 or frame_index % max(1, round(fps)) == 0
             ):
-                pitch_result = next(
-                    iter(pitch_model.predict(frame, verbose=False, device=device))
-                )
+                pitch_result = next(iter(pitch_model.predict(frame, verbose=False, device=device)))
                 detected_pitch = calibration_from_keypoint_result(pitch_result, width, height)
                 if detected_pitch is not None:
                     calibration = detected_pitch

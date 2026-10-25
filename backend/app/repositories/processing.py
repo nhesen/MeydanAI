@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.domain import (
+    Match,
     ProcessingIngestionBatch,
     ProcessingJob,
     ProcessingTrackMapping,
@@ -22,8 +23,21 @@ class ProcessingRepository:
     ) -> ProcessingJob | None:
         query = select(ProcessingJob).where(ProcessingJob.id == job_id)
         if for_update:
-            query = query.with_for_update()
+            query = query.with_for_update().execution_options(populate_existing=True)
         return self.session.scalar(query)
+
+    def lock_match(self, match_id: uuid.UUID) -> None:
+        self.session.execute(select(Match.id).where(Match.id == match_id).with_for_update())
+
+    def get_active_job(self, match_id: uuid.UUID) -> ProcessingJob | None:
+        return self.session.scalar(
+            select(ProcessingJob)
+            .where(
+                ProcessingJob.match_id == match_id,
+                ProcessingJob.status.in_(("queued", "processing")),
+            )
+            .limit(1)
+        )
 
     def list_queued_jobs(self, *, limit: int) -> list[ProcessingJob]:
         return list(

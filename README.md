@@ -107,6 +107,28 @@ Production rejects wildcard CORS and disabled login/register rate limits.
 
 ## Local development
 
+Windows quick start (Docker Desktop must be running):
+
+```powershell
+.\Start-MeydanAI.ps1 -Rebuild
+```
+
+This starts the web app, API and database, then starts the FootballVision worker
+in the background. Open `http://localhost:3000`, choose **Create match**, then
+**Manage match → Upload match video**. Upload progress and processing status
+update automatically. Worker logs are in `backend/var/analysis-worker.*.log`.
+For subsequent launches without source changes, omit `-Rebuild`. Existing data
+is retained. `Start-AnalysisWorker.ps1 -CheckOnly` checks the local CV runtime;
+CUDA is selected when available, with CPU support and a conservative batch of 2.
+
+FootballVision uses the local football model (ball, goalkeeper, player, referee).
+ByteTrack supports the current `trackers` package. A video uploaded without
+manual pitch calibration still provides estimated positions and event candidates;
+physical speed, distance, sprint count and intensity remain unavailable. Team
+labels and account-to-track assignment are estimates unless manually verified;
+jersey OCR and GPS validation are not implemented. Auto grass-outline mapping
+does not establish real pitch dimensions.
+
 Recommended path: run PostgreSQL in Compose, then run the API and Next.js app
 on the host.
 
@@ -237,12 +259,26 @@ the legacy organizer token.
 Do not enable wildcard CORS, disable rate limits, or rely on example passwords
 in production.
 
+## Per-video calibration and review
+
+In **Manage match**, select a video and choose its calibration mode before uploading:
+
+- **Manual**: for a fixed camera, enter the measured pitch length and width and select the four pitch corners in the order shown on the first video frame. All four corners must be visible; do not guess off-screen corners. This also supports small pitches and futsal.
+- **Automatic**: for an 11-a-side pitch, enter its actual dimensions (90–120 m long, 45–90 m wide). A second YOLO model detects pitch landmarks on each frame, including camera movement. Physical metrics are produced only where geometric validation succeeds.
+- **Relative**: tracks movement without converting pixels into meters. Speed and distance remain unavailable.
+
+Results show calibration coverage and measured time. Distance covers only validated observations; it is not a full-match estimate when tracking or calibration is missing. Camera changes and uncalibrated intervals are never joined into artificial running distances.
+
+The organizer's analysis review shows player crops and conservative jersey-number suggestions from repeated OCR readings. Select the correct roster player/team, rename temporary detected players if needed, and confirm the identity. Mapping to an already assigned player swaps the associated results after confirmation. OCR suggestions alone never confirm identity. Review AI event clips/timestamps separately: confirm supported events or reject false detections. Rejected events are removed from public event and highlight lists; reviewing a goal does not change the manually managed score.
+
+Run `./Start-MeydanAI.ps1` after starting Docker Desktop. Use `-Rebuild` after source changes. The launcher starts the database, API, frontend and local GPU worker; worker logs are in `backend/var/analysis-worker.stderr.log`.
+
 ## Known limitations
 
-- Local video analysis uses OpenCV motion tracking, not a trained player/jersey model
-- Detected tracks are mapped to assigned players by field side and activity, not OCR
+- Production video analysis uses FootballVision with football-specific YOLO weights; OpenCV motion tracking is an explicit legacy fallback
+- Detected tracks use team classification and available jersey labels before field-side/activity fallback; account identity still needs verification, not OCR
 - If a match has no jersey assignments, the worker creates temporary detected players from motion tracks
-- Reported speed, distance, sprints, and rating are clamped to football-plausible bounds; they are estimates, not GPS
+- Physical metrics require validated manual or automatic calibration and remain video-derived estimates, not GPS measurements; player identities and candidate events require organizer review
 - Broadcast-quality CV, cloud storage, and email verification are not implemented
 - Email verification, password reset, and outbound email are not implemented
 - Object storage and CDN-backed highlight media are not implemented

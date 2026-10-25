@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.core.analysis_metadata import rejected_highlight_ids
 from app.models.domain import (
     Highlight,
     JerseyAssignment,
@@ -127,6 +128,7 @@ class MatchRepository:
             self.session.scalars(
                 select(Highlight)
                 .where(Highlight.match_id == match_id)
+                .where(Highlight.id.not_in(rejected_highlight_ids(self.session, match_id)))
                 .order_by(Highlight.timestamp_ms, Highlight.created_at)
             )
         )

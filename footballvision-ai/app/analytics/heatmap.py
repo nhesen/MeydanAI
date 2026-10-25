@@ -14,13 +14,14 @@ def render_heatmap(
     width_m: float,
     *,
     title: str = "",
+    require_calibrated: bool = True,
 ) -> str:
     import cv2
 
     counts = np.zeros((360, 640), dtype=np.float32)
     for track in tracks:
         for sample in track.samples:
-            if sample.world is None:
+            if sample.world is None or (require_calibrated and not sample.calibrated):
                 continue
             x = sample.world[0] / length_m
             y = sample.world[1] / width_m
@@ -32,6 +33,11 @@ def render_heatmap(
     cv2.rectangle(colored, (2, 2), (637, 357), (240, 240, 240), 1)
     cv2.line(colored, (320, 2), (320, 357), (240, 240, 240), 1)
     cv2.circle(colored, (320, 180), 42, (240, 240, 240), 1)
+    if float(counts.max()) <= 0:
+        cv2.putText(
+            colored, "no measured positions", (12, 180),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2,
+        )
     if title:
         cv2.putText(colored, title, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     path.parent.mkdir(parents=True, exist_ok=True)

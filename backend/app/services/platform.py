@@ -5,7 +5,8 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
-from app.core.analytics_bounds import MAX_AVG_KMH, clamp_speed, sanitize_player_metrics
+from app.core.analysis_metadata import analysis_quality, highlight_review_states
+from app.core.analytics_bounds import MAX_PLAYER_KMH, clamp_speed, sanitize_player_metrics
 from app.core.exceptions import DomainError
 from app.models.domain import (
     Highlight,
@@ -229,7 +230,7 @@ class PlatformService:
                     team_name=row[1],
                     match_count=row[2],
                     total_distance_m=row[3],
-                    average_speed_kmh=clamp_speed(row[4], MAX_AVG_KMH)
+                    average_speed_kmh=clamp_speed(row[4], MAX_PLAYER_KMH)
                     if row[4] is not None
                     else None,
                     maximum_speed_kmh=clamp_speed(row[5]) if row[5] is not None else None,
@@ -330,8 +331,8 @@ class PlatformService:
             contexts[assignment.player_id].append(self._performance_summary(match, team, analytics))
         return contexts
 
-    @staticmethod
     def _performance_summary(
+        self,
         match: Match,
         team: Team,
         analytics: PlayerMatchAnalytics | None,
@@ -359,6 +360,7 @@ class PlatformService:
             active_seconds=analytics.active_seconds,
             activity_count=analytics.activity_count,
             peak_speed_at_ms=analytics.peak_speed_at_ms,
+            calibrated=analysis_quality(self.session, match.id, analytics.player_id).calibrated,
         )
         return PlayerPerformanceSummary(
             match_id=match.id,
@@ -374,12 +376,13 @@ class PlatformService:
             active_seconds=metrics.active_seconds,
         )
 
-    @staticmethod
     def _highlight_response(
+        self,
         highlight: Highlight,
         match: Match,
         player: Player | None,
     ) -> PlatformHighlightResponse:
+        states = highlight_review_states(self.session, match.id)
         return PlatformHighlightResponse(
             id=highlight.id,
             match_id=match.id,
@@ -393,6 +396,9 @@ class PlatformService:
             thumbnail_url=highlight.thumbnail_url,
             duration_ms=highlight.duration_ms,
             created_at=highlight.created_at,
+            review_status=states.get(
+                highlight.id, "pending" if highlight.title.startswith("AI: ") else "confirmed"
+            ),
         )
 
     @staticmethod

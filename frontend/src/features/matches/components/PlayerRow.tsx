@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 import { Avatar } from "@/components/ui/Avatar";
+import { Badge } from "@/components/ui/Badge";
 import type { MatchPlayer } from "@/types/api";
 
 interface PlayerRowProps {
@@ -25,6 +26,7 @@ export function PlayerRow({ matchId, player }: PlayerRowProps) {
             ? `Current jersey #${player.current_jersey}`
             : "Jersey N/A"}
         </span>
+        {player.analysis_quality ? <span className="mt-1 block"><Badge variant={player.analysis_quality.identity_mapping === "confirmed" ? "success" : "warning"}>{player.analysis_quality.identity_mapping === "confirmed" ? "Identity reviewed" : "Identity estimated"}</Badge></span> : null}
       </span>
       <span className="text-right">
         <span className="type-stat-label block">RATING</span>

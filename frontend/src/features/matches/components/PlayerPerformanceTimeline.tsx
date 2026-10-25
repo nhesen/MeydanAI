@@ -1,8 +1,9 @@
 import { Activity, Clock3, Shirt, Zap } from "lucide-react";
 
 import { EmptyState } from "@/components/feedback/EmptyState";
-import { formatSpeed, formatTimestamp } from "@/lib/analytics-formatters";
-import type { PlayerAnalyticsDetail } from "@/types/api";
+import { Badge } from "@/components/ui/Badge";
+import { formatSpeed, formatTimestamp, reviewedEventTitle } from "@/lib/analytics-formatters";
+import type { EventReviewStatus, PlayerAnalyticsDetail } from "@/types/api";
 
 interface PlayerPerformanceTimelineProps {
   detail: PlayerAnalyticsDetail;
@@ -14,6 +15,7 @@ interface DisplayEvent {
   title: string;
   detail: string | null;
   type: string;
+  reviewStatus?: EventReviewStatus;
 }
 
 const eventLabels: Record<string, string> = {
@@ -38,6 +40,9 @@ const eventLabels: Record<string, string> = {
   dribble: "Dribble",
   save: "Save",
   corner: "Corner",
+  goal_kick: "Goal kick",
+  woodwork: "Post",
+  big_chance: "Big chance",
   free_kick: "Free kick",
   penalty: "Penalty",
 };
@@ -51,7 +56,7 @@ export function PlayerPerformanceTimeline({
     return (
       <EmptyState
         compact
-        description="Sprint, peak-speed and other verified performance moments will appear here when available."
+        description="Movement and performance moments will appear here when available. AI suggestions require review."
         icon={Clock3}
         title="No performance events yet"
       />
@@ -86,8 +91,9 @@ export function PlayerPerformanceTimeline({
                 {eventLabels[event.type] ?? event.type.replaceAll("_", " ")}
               </p>
               <p className="mt-1 break-words text-sm font-semibold text-slate-950">
-                {event.title}
+                {reviewedEventTitle(event.title, event.reviewStatus)}
               </p>
+              {event.reviewStatus ? <div className="mt-2"><Badge variant={event.reviewStatus === "confirmed" ? "success" : "warning"}>{event.reviewStatus === "confirmed" ? "Organizer confirmed" : "AI suggestion · needs review"}</Badge></div> : null}
               {event.detail ? (
                 <p className="mt-1 text-sm text-slate-600">{event.detail}</p>
               ) : null}
@@ -100,10 +106,11 @@ export function PlayerPerformanceTimeline({
 }
 
 function createEvents(detail: PlayerAnalyticsDetail): DisplayEvent[] {
-  const analyticsEvents: DisplayEvent[] = detail.events.map((event) => ({
+  const analyticsEvents: DisplayEvent[] = detail.events.filter((event) => event.review_status !== "rejected").map((event) => ({
     id: event.id,
     timestampMs: event.timestamp_ms,
     title: event.title,
+    reviewStatus: event.review_status ?? "pending",
     detail: event.speed_kmh === null ? null : formatSpeed(event.speed_kmh),
     type:
       event.event_type === "high_intensity_period"

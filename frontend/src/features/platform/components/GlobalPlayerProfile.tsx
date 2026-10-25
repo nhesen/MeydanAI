@@ -83,13 +83,13 @@ export function GlobalPlayerProfile({ playerId }: { playerId: string }) {
           <Avatar className="size-16 text-lg" name={profile.display_name} />
           <div className="min-w-0">
             <Badge variant={profile.is_temporary ? "neutral" : "brand"}>
-              {profile.is_temporary ? "Match-created identity" : "Player profile"}
+              {profile.is_temporary ? "Temporary tracked player" : "Player profile"}
             </Badge>
             <h1 className="mt-3 break-words text-2xl font-bold text-slate-950 sm:text-3xl">
               {profile.display_name}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Global identity · jerseys remain match-specific
+              {profile.is_temporary ? "Review this player label to confirm identity" : "Player profile · jerseys remain match-specific"}
             </p>
           </div>
         </div>

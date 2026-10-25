@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.processing import ProcessingSourceType, ProcessingStage, ProcessingStatus
+from app.schemas.analysis import UploadCalibrationConfig
 
 
 class ProcessingJobResponse(BaseModel):
@@ -21,6 +22,7 @@ class ProcessingJobResponse(BaseModel):
     failed_at: datetime | None
     error_code: str | None
     error_message: str | None
+    calibration_config: UploadCalibrationConfig | None = None
 
 
 class WorkerJobSummary(BaseModel):
@@ -45,6 +47,7 @@ class WorkerJobContext(BaseModel):
     source_reference: str
     status: ProcessingStatus
     assignments: list[WorkerAssignmentContext]
+    calibration_config: UploadCalibrationConfig = Field(default_factory=UploadCalibrationConfig)
 
 
 class DetectedRosterRequest(BaseModel):
@@ -53,6 +56,7 @@ class DetectedRosterRequest(BaseModel):
 
 class ProcessingJobStateUpdate(BaseModel):
     status: ProcessingStatus
+    expected_status: ProcessingStatus | None = None
     stage: ProcessingStage
     progress: int | None = Field(default=None, ge=0, le=100)
     provider_run_id: str | None = Field(default=None, min_length=1, max_length=200)

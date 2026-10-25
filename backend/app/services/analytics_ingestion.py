@@ -4,6 +4,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -16,6 +17,7 @@ from app.core.analytics_bounds import (
 from app.core.exceptions import DomainError
 from app.core.processing import ProcessingStage, ProcessingStatus
 from app.models.domain import (
+    Highlight,
     PlayerAnalyticsEvent,
     PlayerIntensityBucket,
     PlayerMatchAnalytics,
@@ -25,9 +27,24 @@ from app.models.domain import (
 )
 from app.repositories.matches import MatchRepository
 from app.repositories.processing import ProcessingRepository
-from app.schemas.ingestion import AnalyticsIngestionResponse, PlayerAnalyticsIngest
+from app.schemas.ingestion import (
+    AnalyticsEventIngest,
+    AnalyticsIngestionResponse,
+    PlayerAnalyticsIngest,
+)
 
 logger = logging.getLogger(__name__)
+
+HIGHLIGHT_EVENT_TYPES = {
+    "goal": "goal",
+    "shot": "key_moment",
+    "shot_on_target": "key_moment",
+    "shot_off_target": "key_moment",
+    "save": "key_moment",
+    "assist": "key_moment",
+    "key_pass": "key_moment",
+    "big_chance": "key_moment",
+}
 
 
 class AnalyticsIngestionService:
@@ -48,12 +65,30 @@ class AnalyticsIngestionService:
         idempotency_key: str,
         payload: PlayerAnalyticsIngest,
     ) -> AnalyticsIngestionResponse:
+        if len(payload.positions) > self.max_position_samples:
+            raise DomainError(
+                status=413,
+                title="Analytics batch is too large",
+                detail="Reduce or downsample this player result to the configured batch limit.",
+                error_code="ANALYTICS_BATCH_TOO_LARGE",
+            )
+        # Normalization must not mutate a caller's retry payload or its idempotency hash.
+        payload = payload.model_copy(deep=True)
+        calibrated_result = bool(
+            payload.calibration and payload.calibration.transform_metadata.get("calibrated") is True
+        )
         payload.positions = sanitize_positions(list(payload.positions))
         payload.intensity = sanitize_intensity(
             list(payload.intensity),
             raw_max_speed_kmh=payload.metrics.max_speed_kmh,
         )
-        payload.events = sanitize_events(list(payload.events))
+        threshold = None
+        if payload.calibration is not None:
+            threshold = payload.calibration.transform_metadata.get("sprint_threshold_kmh")
+        sprint_kmh = float(threshold) if isinstance(threshold, (int, float)) else 18.0
+        payload.events = sanitize_events(
+            list(payload.events), calibrated=calibrated_result, sprint_kmh=sprint_kmh
+        )
         cleaned = sanitize_player_metrics(
             rating=payload.metrics.rating,
             distance_m=payload.metrics.distance_m,
@@ -65,6 +100,7 @@ class AnalyticsIngestionService:
             peak_speed_at_ms=payload.metrics.peak_speed_at_ms,
             event_sprint_count=sum(1 for event in payload.events if event.event_type == "sprint")
             or None,
+            calibrated=calibrated_result,
         )
         payload.metrics.rating = cleaned.rating
         payload.metrics.distance_m = cleaned.distance_m
@@ -74,13 +110,6 @@ class AnalyticsIngestionService:
         payload.metrics.active_seconds = cleaned.active_seconds
         payload.metrics.activity_count = cleaned.activity_count
         payload.metrics.peak_speed_at_ms = cleaned.peak_speed_at_ms
-        if len(payload.positions) > self.max_position_samples:
-            raise DomainError(
-                status=413,
-                title="Analytics batch is too large",
-                detail="Reduce or downsample this player result to the configured batch limit.",
-                error_code="ANALYTICS_BATCH_TOO_LARGE",
-            )
         payload_hash = self._payload_hash(payload)
         existing_batch = self.processing_repository.get_ingestion_batch(
             job_id,
@@ -181,6 +210,11 @@ class AnalyticsIngestionService:
                 )
                 for event in payload.events
             ]
+            self._replace_ai_highlights(
+                job.match_id,
+                payload.player_id,
+                payload.events,
+            )
 
             if payload.provider_track_id is not None:
                 self._upsert_track_mapping(
@@ -202,7 +236,38 @@ class AnalyticsIngestionService:
                 )
 
             if payload.calibration is not None:
-                job.calibration_metadata = payload.calibration.model_dump(mode="json")
+                result = payload.calibration.model_dump(mode="json")
+                metadata = dict(job.calibration_metadata or {})
+                track_results = metadata.get("track_results", {})
+                track_results = track_results if isinstance(track_results, dict) else {}
+                transform = payload.calibration.transform_metadata
+                measured = transform.get("measured_seconds")
+                measured_valid = isinstance(measured, (int, float)) and measured > 0
+                job.calibration_metadata = {
+                    **metadata,
+                    "result": result,
+                    "track_results": {
+                        **track_results,
+                        payload.provider_track_id or f"player:{payload.player_id}": {
+                            "calibration": result,
+                            "player_id": str(payload.player_id),
+                            "physical_metrics_available": (
+                                transform.get("calibrated") is True
+                                and payload.metrics.distance_m is not None
+                                and measured_valid
+                            ),
+                            "observed_seconds": payload.metrics.active_seconds,
+                        },
+                    },
+                }
+            if payload.track_evidence is not None and payload.provider_track_id is not None:
+                metadata = dict(job.calibration_metadata or {})
+                evidence = metadata.get("track_evidence")
+                metadata["track_evidence"] = {
+                    **(evidence if isinstance(evidence, dict) else {}),
+                    payload.provider_track_id: payload.track_evidence.model_dump(mode="json"),
+                }
+                job.calibration_metadata = metadata
 
             batch = ProcessingIngestionBatch(
                 job_id=job.id,
@@ -270,6 +335,48 @@ class AnalyticsIngestionService:
             event_count=batch.event_count,
             job_status=ProcessingStatus(job.status),
         )
+
+    def _replace_ai_highlights(
+        self,
+        match_id: uuid.UUID,
+        player_id: uuid.UUID,
+        events: list[AnalyticsEventIngest],
+    ) -> None:
+        self.session.execute(
+            delete(Highlight).where(
+                Highlight.match_id == match_id,
+                Highlight.player_id == player_id,
+                Highlight.title.like("AI: %"),
+            )
+        )
+        seen: set[int] = set()
+        ordered = sorted(
+            events,
+            key=lambda event: (
+                0
+                if event.event_type == "goal"
+                else 1
+                if event.event_type == "big_chance"
+                else 2,
+                event.timestamp_ms,
+            ),
+        )
+        for event in ordered:
+            highlight_type = HIGHLIGHT_EVENT_TYPES.get(event.event_type)
+            if highlight_type is None or event.timestamp_ms in seen:
+                continue
+            seen.add(event.timestamp_ms)
+            self.session.add(
+                Highlight(
+                    match_id=match_id,
+                    player_id=player_id,
+                    highlight_type=highlight_type,
+                    timestamp_ms=event.timestamp_ms,
+                    title=f"AI: {event.title}"[:140],
+                    video_url=event.video_url,
+                    duration_ms=event.duration_ms,
+                )
+            )
 
     def _validate_player_mapping(
         self,

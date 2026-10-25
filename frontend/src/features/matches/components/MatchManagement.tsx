@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { QR_COLORS } from "@/config/brand";
 import { ProcessingJobsPanel } from "@/features/matches/components/ProcessingJobsPanel";
+import { AnalysisReviewPanel } from "@/features/matches/components/AnalysisReviewPanel";
 import { ApiError, api } from "@/services/api-client";
 import type { JerseyAssignment, MatchSummary } from "@/types/api";
 
@@ -39,9 +40,12 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   const [assignments, setAssignments] = useState<JerseyAssignment[]>([]);
   const [edits, setEdits] = useState<Record<string, EditState>>({});
   const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [reviewVersion, setReviewVersion] = useState(0);
 
   const load = useCallback(async (token: string | null, signal?: AbortSignal) => {
     const [matchResponse, assignmentResponse] = await Promise.all([
@@ -90,12 +94,9 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
       setOrganizerToken(token);
       try {
         await load(token, controller.signal);
-      } catch {
+      } catch (caught: unknown) {
         if (!controller.signal.aborted) {
-          if (!token) {
-            setLoading(false);
-            return;
-          }
+          setAccessDenied(caught instanceof ApiError && (caught.status === 401 || caught.status === 403));
           setError("Match management data could not be loaded.");
         }
       } finally {
@@ -108,12 +109,28 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
       cancelled = true;
       controller.abort();
     };
-  }, [load, matchId]);
+  }, [attempt, load, matchId]);
+
+  const refreshAfterProcessing = useCallback(() => {
+    setReviewVersion((current) => current + 1);
+    void load(organizerToken).catch(() => {
+      setError("Analytics finished, but match details could not be refreshed. Reload this page to see updated players.");
+    });
+  }, [load, organizerToken]);
 
   async function applyChange(assignment: JerseyAssignment) {
     if (!organizerToken && !match) return;
     const edit = edits[assignment.id];
     if (!edit) return;
+    const jersey = Number(edit.jersey);
+    if (edit.jersey.trim() === "" || !Number.isInteger(jersey) || jersey < 0 || jersey > 99) {
+      setError("Enter a whole jersey number between 0 and 99.");
+      return;
+    }
+    if (edit.override && edit.reason.trim().length < 5) {
+      setError("Provide an override reason with at least 5 characters.");
+      return;
+    }
     setBusyId(assignment.id);
     setError(null);
     try {
@@ -149,6 +166,7 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   async function closeAssignment(assignmentId: string) {
     if (!organizerToken && !match) return;
     setBusyId(assignmentId);
+    setError(null);
     try {
       await api.correctAssignment(matchId, assignmentId, organizerToken, {
         close_only: true,
@@ -169,13 +187,21 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
   }
 
   async function copyJoinLink() {
-    await navigator.clipboard.writeText(joinUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(joinUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError("The join link could not be copied. Select and copy the displayed link manually.");
+    }
   }
 
   async function saveMatchState() {
     if (!organizerToken && !match) return;
+    if ([homeScore, awayScore].some((value) => value !== "" && (!Number.isInteger(Number(value)) || Number(value) < 0))) {
+      setError("Scores must be zero or a positive whole number.");
+      return;
+    }
     setBusyId("match-state");
     setError(null);
     try {
@@ -196,7 +222,7 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
     return <LoadingSkeleton lines={6} label="Loading match management" />;
   }
 
-  if (!match && !organizerToken) {
+  if (!match && accessDenied) {
     return (
       <Card>
         <div className="flex items-start gap-3">
@@ -214,6 +240,13 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
         </div>
       </Card>
     );
+  }
+
+  if (!match) {
+    return <ErrorState message={error ?? "The match could not be loaded."} onRetry={() => {
+      setLoading(true);
+      setAttempt((current) => current + 1);
+    }} title="Match unavailable" />;
   }
 
   return (
@@ -273,8 +306,10 @@ export function MatchManagement({ matchId }: MatchManagementProps) {
       ) : null}
       <ProcessingJobsPanel
         matchId={matchId}
+        onCompleted={refreshAfterProcessing}
         organizerToken={organizerToken}
       />
+      <AnalysisReviewPanel matchId={matchId} organizerToken={organizerToken} teams={match.teams} assignments={assignments} reloadKey={reviewVersion} onReviewed={refreshAfterProcessing} />
       {joinUrl ? (
         <Card className="grid items-center gap-5 sm:grid-cols-[1fr_auto]">
           <div className="min-w-0">

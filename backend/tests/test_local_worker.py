@@ -15,7 +15,6 @@ from app.core.database import Base, get_db
 from app.main import create_app
 from app.schemas.processing import WorkerAssignmentContext
 from app.worker.analyzer import (
-    MAX_PLAYER_KMH,
     MotionTrack,
     TrackSample,
     _metrics_for_track,
@@ -84,9 +83,11 @@ def test_motion_analyzer_tracks_moving_blob(tmp_path: Path) -> None:
     tracks = analyze_video(video_path)
     assert tracks
     assert tracks[0].activity_count >= 2
-    assert tracks[0].distance_m > 0
-    assert tracks[0].max_speed_kmh <= MAX_PLAYER_KMH
-    assert tracks[0].avg_speed_kmh <= 16
+    assert tracks[0].distance_m is None
+    assert tracks[0].max_speed_kmh is None
+    assert tracks[0].avg_speed_kmh is None
+    assert tracks[0].rating is None
+    assert tracks[0].sprint_count is None
     assert all(0 <= sample.x <= 1 and 0 <= sample.y <= 1 for sample in tracks[0].positions)
 
 
@@ -101,10 +102,11 @@ def test_metrics_discard_impossible_teleports() -> None:
         ],
     )
     result = _metrics_for_track(track, 1920, 1080)
-    assert result.max_speed_kmh <= MAX_PLAYER_KMH
-    assert result.avg_speed_kmh <= 16
-    assert result.distance_m < 20
-    assert result.sprint_count == 0
+    assert result.distance_m is None
+    assert result.max_speed_kmh is None
+    assert result.avg_speed_kmh is None
+    assert result.sprint_count is None
+    assert len(result.positions) == 4
 
 
 def test_track_mapping_uses_field_side() -> None:

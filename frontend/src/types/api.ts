@@ -96,6 +96,7 @@ export interface MatchPlayer {
   activity_count: number | null;
   peak_speed_at_ms: number | null;
   analytics_status: AnalyticsStatus;
+  analysis_quality?: AnalysisQuality;
 }
 
 export type AnalyticsStatus =
@@ -139,11 +140,15 @@ export interface PlayerAnalyticsEvent {
     | "dribble"
     | "save"
     | "corner"
+    | "goal_kick"
+    | "woodwork"
+    | "big_chance"
     | "free_kick"
     | "penalty";
   timestamp_ms: number;
   speed_kmh: number | null;
   title: string;
+  review_status?: EventReviewStatus;
 }
 
 export interface PlayerAnalyticsDetail {
@@ -152,6 +157,65 @@ export interface PlayerAnalyticsDetail {
   position_samples: PositionSample[];
   intensity_buckets: IntensityBucket[];
   events: PlayerAnalyticsEvent[];
+  analysis_quality?: AnalysisQuality;
+}
+
+export type EventReviewStatus = "pending" | "confirmed" | "rejected";
+
+export interface UploadCalibrationConfig {
+  mode: "manual" | "automatic" | "relative";
+  pitch_mode: "hali_saha" | "11v11" | "futsal";
+  camera_mode: "fixed" | "broadcast";
+  length_m: number;
+  width_m: number;
+  points: [number, number][];
+}
+
+export interface AnalysisQuality {
+  job_id: string | null;
+  calibrated: boolean;
+  source: string;
+  physical_metrics_available: boolean;
+  identity_mapping: "estimated" | "confirmed" | "unavailable";
+  pitch_length_m: number | null;
+  pitch_width_m: number | null;
+  calibration_coverage?: number;
+  measured_seconds?: number;
+  ball_observed_coverage?: number | null;
+  sprint_threshold_kmh?: number | null;
+  sprint_min_duration_s?: number | null;
+}
+
+export interface TrackReviewItem {
+  id: string;
+  provider_track_id: string;
+  player_id: string | null;
+  team_id: string | null;
+  display_name: string | null;
+  jersey_number: number | null;
+  review_status: "estimated" | "confirmed";
+  can_rename?: boolean;
+  evidence: { image_url: string | null; first_seen_ms: number | null; last_seen_ms: number | null; jersey_candidate?: number | null; jersey_confidence?: number | null; ocr_observations?: number | null } | null;
+}
+
+export interface AnalysisReviewEvent {
+  id: string;
+  player_id: string;
+  team_id: string;
+  event_type: string;
+  timestamp_ms: number;
+  title: string;
+  review_status: EventReviewStatus;
+  video_url: string | null;
+}
+
+export interface AnalysisReview {
+  job_id: string | null;
+  status: string | null;
+  calibration_config: UploadCalibrationConfig | null;
+  analysis_quality: AnalysisQuality;
+  mappings: TrackReviewItem[];
+  events: AnalysisReviewEvent[];
 }
 
 export interface PlayerComparison {
@@ -193,6 +257,7 @@ export interface ProcessingJob {
   failed_at: string | null;
   error_code: string | null;
   error_message: string | null;
+  calibration_config?: UploadCalibrationConfig | null;
 }
 
 export interface PageResponse<T> {
@@ -270,6 +335,7 @@ export interface PlatformHighlight {
   thumbnail_url: string | null;
   duration_ms: number | null;
   created_at: string;
+  review_status?: EventReviewStatus;
 }
 
 export interface LeaderboardEntry {
@@ -321,6 +387,18 @@ export interface TeamStats {
   maximum_speed_kmh: number | null;
   sprint_count: number | null;
   active_time_seconds: number | null;
+  shots?: number | null;
+  shots_on_target?: number | null;
+  goals?: number | null;
+  xg?: number | null;
+  big_chances?: number | null;
+  saves?: number | null;
+  corners?: number | null;
+  goal_kicks?: number | null;
+  woodwork?: number | null;
+  passes?: number | null;
+  accurate_passes?: number | null;
+  fouls?: number | null;
 }
 
 export interface TimelineEvent {
@@ -338,6 +416,7 @@ export interface TimelineEvent {
   description: string | null;
   player_id: string | null;
   team_id: string | null;
+  review_status?: EventReviewStatus;
 }
 
 export interface MatchHighlight {
@@ -349,6 +428,7 @@ export interface MatchHighlight {
   duration_seconds: number | null;
   occurred_at: string | null;
   player_id: string | null;
+  review_status?: EventReviewStatus;
 }
 
 export interface MatchDetail {
@@ -357,6 +437,7 @@ export interface MatchDetail {
   team_stats: TeamStats[] | null;
   events: TimelineEvent[];
   highlights: MatchHighlight[];
+  analysis_quality?: AnalysisQuality;
 }
 
 export type UserRole = "user" | "admin";

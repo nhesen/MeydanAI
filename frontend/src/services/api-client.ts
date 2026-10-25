@@ -25,6 +25,8 @@ import type {
   AuthUser,
   AdminDashboard,
   UserRole,
+  UploadCalibrationConfig,
+  AnalysisReview,
 } from "@/types/api";
 import { getSessionToken, setSessionToken } from "@/lib/session";
 
@@ -92,6 +94,12 @@ export interface UpdateMatchStateInput {
   ended_at?: string | null;
 }
 
+export interface VideoUploadOptions {
+  signal?: AbortSignal;
+  onProgress?: (percent: number) => void;
+  calibration?: UploadCalibrationConfig;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -147,6 +155,61 @@ function withQuery(path: `/${string}`, values: object) {
   });
   const serialized = query.toString();
   return (serialized ? `${path}?${serialized}` : path) as `/${string}`;
+}
+
+function uploadVideo(
+  path: `/${string}`,
+  body: FormData,
+  organizerToken: string | null | undefined,
+  options: VideoUploadOptions,
+): Promise<ApiResponse<ProcessingJob>> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    const cleanup = () => options.signal?.removeEventListener("abort", abort);
+    if (options.signal?.aborted) {
+      reject(new DOMException("Upload cancelled", "AbortError"));
+      return;
+    }
+
+    xhr.open("POST", `${getApiBaseUrl()}${path}`);
+    const headers = withAuthHeaders({
+      headers: organizerToken ? { "X-Organizer-Token": organizerToken } : undefined,
+    });
+    headers.forEach((value, name) => xhr.setRequestHeader(name, value));
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        options.onProgress?.(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    xhr.onload = () => {
+      cleanup();
+      let payload: ApiResponse<ProcessingJob> | ApiProblem | undefined;
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch {
+        // Proxies may return HTML for upload errors.
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const problem = payload && "detail" in payload ? payload : undefined;
+        reject(new ApiError(xhr.status, problem));
+      } else if (payload && "data" in payload) {
+        resolve(payload);
+      } else {
+        reject(new Error("The upload server returned an invalid response."));
+      }
+    };
+    xhr.onerror = () => {
+      cleanup();
+      reject(new TypeError("The video upload connection failed."));
+    };
+    xhr.onabort = () => {
+      cleanup();
+      reject(new DOMException("Upload cancelled", "AbortError"));
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    xhr.send(body);
+  });
 }
 
 export const api = {
@@ -394,16 +457,16 @@ export const api = {
     matchId: string,
     organizerToken: string | null | undefined,
     video: File,
+    options: VideoUploadOptions = {},
   ) {
     const body = new FormData();
     body.append("video", video);
-    return request<ApiResponse<ProcessingJob>>(
+    if (options.calibration) body.append("calibration", JSON.stringify(options.calibration));
+    return uploadVideo(
       `/api/v1/matches/${matchId}/processing-jobs`,
-      {
-        method: "POST",
-        headers: organizerToken ? { "X-Organizer-Token": organizerToken } : undefined,
-        body,
-      },
+      body,
+      organizerToken,
+      options,
     );
   },
   getProcessingJobs(
@@ -418,6 +481,26 @@ export const api = {
         headers: organizerToken ? { "X-Organizer-Token": organizerToken } : undefined,
       },
     );
+  },
+  getAnalysisReview(matchId: string, organizerToken?: string | null, signal?: AbortSignal) {
+    return request<ApiResponse<AnalysisReview>>(`/api/v1/matches/${matchId}/analysis-review`, {
+      signal,
+      headers: organizerToken ? { "X-Organizer-Token": organizerToken } : undefined,
+    });
+  },
+  reviewTrackMapping(matchId: string, mappingId: string, organizerToken: string | null | undefined, playerId: string, teamId: string, displayName?: string) {
+    return request<ApiResponse<AnalysisReview>>(`/api/v1/matches/${matchId}/track-mappings/${mappingId}/review`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(organizerToken ? { "X-Organizer-Token": organizerToken } : {}) },
+      body: JSON.stringify({ player_id: playerId, team_id: teamId, ...(displayName !== undefined ? { display_name: displayName } : {}) }),
+    });
+  },
+  reviewAnalysisEvent(matchId: string, eventId: string, organizerToken: string | null | undefined, status: "confirmed" | "rejected") {
+    return request<ApiResponse<AnalysisReview>>(`/api/v1/matches/${matchId}/events/${eventId}/review`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(organizerToken ? { "X-Organizer-Token": organizerToken } : {}) },
+      body: JSON.stringify({ status }),
+    });
   },
   retryProcessingJob(jobId: string, organizerToken?: string | null) {
     return request<ApiResponse<ProcessingJob>>(

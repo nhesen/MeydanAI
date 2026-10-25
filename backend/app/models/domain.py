@@ -560,7 +560,7 @@ class PlayerAnalyticsEvent(Base):
             "'pass', 'successful_pass', 'failed_pass', 'key_pass', 'shot', "
             "'shot_on_target', 'shot_off_target', 'goal', 'assist', 'tackle', "
             "'interception', 'turnover', 'ball_recovery', 'dribble', 'save', "
-            "'corner', 'free_kick', 'penalty')",
+            "'corner', 'goal_kick', 'woodwork', 'big_chance', 'free_kick', 'penalty')",
             name="ck_player_analytics_event_type",
         ),
         CheckConstraint("timestamp_ms >= 0", name="ck_player_analytics_event_time"),
