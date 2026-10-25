@@ -11,7 +11,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import cv2
 
@@ -139,8 +139,7 @@ def analyze(
             radar: list[tuple[float, float, int | None]] = []
             detections: list[tuple[list[float], int, float, int]] = []
             if boxes is not None and boxes.id is not None:
-                # Ultralytics exposes this conversion without a complete type annotation.
-                boxes = boxes.cpu().numpy()  # type: ignore[no-untyped-call]
+                boxes = cast(Any, boxes).cpu().numpy()
                 assert boxes.id is not None
                 detections = [
                     (box, int(identity), float(confidence), int(kind))
@@ -327,7 +326,7 @@ def analyze(
         check=True,
         capture_output=True,
         timeout=300,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
     )
     raw_video.unlink(missing_ok=True)
     rows = [
