@@ -232,10 +232,7 @@ def load_motion_results(output: Path) -> list[PlayerMotionResult]:
         peak_at = _float(row.get("peak_speed_at_ms"))
         measured_seconds = float(row.get("measured_seconds") or 0)
         track_calibrated = (
-            calibrated
-            and bool(metric_points)
-            and distance is not None
-            and measured_seconds >= 8
+            calibrated and bool(metric_points) and distance is not None and measured_seconds >= 8
         )
         sprints = int(float(row.get("sprint_count") or 0)) if track_calibrated else None
         observed_seconds = (positions[-1].timestamp_ms - positions[0].timestamp_ms) / 1000

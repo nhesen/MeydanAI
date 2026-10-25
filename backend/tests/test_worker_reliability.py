@@ -51,8 +51,12 @@ def test_team_detection_takes_precedence_over_field_half() -> None:
         (away, away_track),
     ]
     # A brief but observed passer must not disappear behind long background tracks.
-    passer = replace(home_track, track_id="3", activity_count=1,
-                     events=[("successful_pass", 100, None, "Possible successful pass")])
+    passer = replace(
+        home_track,
+        track_id="3",
+        activity_count=1,
+        events=[("successful_pass", 100, None, "Possible successful pass")],
+    )
     assert map_tracks_to_assignments([home_track, passer], [home])[0][1] is passer
 
 
@@ -118,6 +122,10 @@ def test_clip_export_is_contained_and_playable_url_is_preserved(
     clip.write_bytes(b"test video")
     (tmp_path / "outside.mp4").write_bytes(b"private file")
     assert _publish_clip(output, tmp_path / "outside.mp4") is None
+    (output / "match_summary.json").write_text(
+        json.dumps({"calibrated": True, "calibration_coverage": 0.95}),
+        encoding="utf-8",
+    )
     (output / "tracks.json").write_text(
         json.dumps(
             {

@@ -78,6 +78,7 @@ export function PlayerMatchDetail({
   }
 
   const { match, player } = detail;
+  const quality = detail.analysis_quality ?? player.analysis_quality;
   const matchStatus = MATCH_STATUS[match.status];
   const hasAnyMetric = [
     player.rating,
@@ -174,16 +175,16 @@ export function PlayerMatchDetail({
         <Card>
           <h2 className="type-section-title text-slate-950">Position heatmap</h2>
           <p className="mb-4 mt-1 text-sm text-slate-500">
-            {player.analysis_quality.physical_metrics_available
+            {quality?.physical_metrics_available
               ? "Measured pitch positions. Empty areas were not observed."
               : "Camera positions only. This is not a measured pitch heatmap, and it is not metres."}
           </p>
           <PlayerHeatmap
-            lengthM={player.analysis_quality.pitch_length_m}
-            measured={player.analysis_quality.physical_metrics_available}
+            lengthM={quality?.pitch_length_m}
+            measured={quality?.physical_metrics_available ?? false}
             processing={player.analytics_status === "processing"}
             samples={detail.position_samples}
-            widthM={player.analysis_quality.pitch_width_m}
+            widthM={quality?.pitch_width_m}
           />
         </Card>
         <Card>

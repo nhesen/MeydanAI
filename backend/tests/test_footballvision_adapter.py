@@ -61,6 +61,7 @@ def test_load_motion_results_from_exported_tables(tmp_path: Path) -> None:
     assert tracks[0].calibration["transform_metadata"]["ball_observed_coverage"] == 0.92
     assert tracks[0].calibration["transform_metadata"]["sprint_threshold_kmh"] == 24
     from app.schemas.ingestion import CalibrationMetadata
+
     CalibrationMetadata.model_validate(tracks[0].calibration)
     assert tracks[0].peak_speed_at_ms is None
     kinds = {item[0] for item in tracks[0].events}
@@ -124,9 +125,7 @@ def test_estimated_events_are_not_ingested_and_xg_stays_on_the_shot(tmp_path: Pa
     assert "pass" not in titles
     assert titles["shot"] == "Possible shot · xG 0.42"
     assert titles["big_chance"] == "Possible big chance · xG 0.42"
-    AnalyticsEventIngest(
-        event_type="big_chance", timestamp_ms=4000, title=titles["big_chance"]
-    )
+    AnalyticsEventIngest(event_type="big_chance", timestamp_ms=4000, title=titles["big_chance"])
     AnalyticsEventIngest(event_type="goal_kick", timestamp_ms=1000, title="Possible goal kick")
     AnalyticsEventIngest(event_type="woodwork", timestamp_ms=2000, title="Possible woodwork")
 

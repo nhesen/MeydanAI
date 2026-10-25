@@ -353,11 +353,7 @@ class AnalyticsIngestionService:
         ordered = sorted(
             events,
             key=lambda event: (
-                0
-                if event.event_type == "goal"
-                else 1
-                if event.event_type == "big_chance"
-                else 2,
+                0 if event.event_type == "goal" else 1 if event.event_type == "big_chance" else 2,
                 event.timestamp_ms,
             ),
         )

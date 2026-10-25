@@ -193,9 +193,7 @@ def _downscale(frame: np.ndarray) -> np.ndarray:
 def _metrics_for_track(track: MotionTrack, width: int, height: int) -> PlayerMotionResult:
     """Blob tracks are image positions. They are not a measured pitch."""
     samples = reconstruct_display_path(_downsample(track.samples))
-    duration_ms = (
-        samples[-1].timestamp_ms - samples[0].timestamp_ms if len(samples) > 1 else 0
-    )
+    duration_ms = samples[-1].timestamp_ms - samples[0].timestamp_ms if len(samples) > 1 else 0
     return PlayerMotionResult(
         track_id=track.track_id,
         positions=samples,

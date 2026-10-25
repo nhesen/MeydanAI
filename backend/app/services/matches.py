@@ -122,7 +122,7 @@ _EVENT_TOTALS = {
 def apply_event_totals(
     stats: list[TeamStatsResponse] | None,
     players: list[MatchPlayerResponse],
-    analytics_by_player: dict,
+    analytics_by_player: dict[uuid.UUID, PlayerMatchAnalytics],
     measured: bool,
 ) -> None:
     """Fill team shot and pass totals from stored events. Fouls stay unknown."""
@@ -130,7 +130,7 @@ def apply_event_totals(
         return
     xg_pattern = re.compile(r"xG\s+([0-9]+(?:\.[0-9]+)?)")
     by_team = {item.team_id: item for item in stats}
-    counts = {team_id: Counter() for team_id in by_team}
+    counts: dict[uuid.UUID, Counter[str]] = {team_id: Counter() for team_id in by_team}
     xg = {team_id: 0.0 for team_id in by_team}
     saw_xg = {team_id: False for team_id in by_team}
     for player in players:
