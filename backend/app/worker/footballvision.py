@@ -442,7 +442,7 @@ def _ensure_football_weights(root: Path) -> Path | None:
         from app.demo.models import player_weights
 
         source = player_weights(root)
-    except (OSError, ValueError, TimeoutError) as exc:
+    except (ImportError, OSError, ValueError, TimeoutError) as exc:
         print(f"footballvision player weights unavailable, using yolo11n: {exc}", flush=True)
         return None
     if source.resolve() != destination.resolve() and source.is_file():
