@@ -67,6 +67,7 @@ def analyze_video(
     if not cap.isOpened():
         raise ValueError("Video could not be decoded.")
     fps = float(cap.get(cv2.CAP_PROP_FPS) or 25)
+    total_frames = max(cap.get(cv2.CAP_PROP_FRAME_COUNT), 1)
     if not np.isfinite(fps) or fps <= 0:
         fps = 25.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -259,9 +260,7 @@ def analyze_video(
             radar_frame = np.zeros((360, 640, 3), dtype=np.uint8)
             write_minimap_frame(radar_frame, live_tracks, ball, cfg)
             radar.write(radar_frame)
-        percent = min(
-            80, 5 + int(70 * index / max(cap.get(cv2.CAP_PROP_FRAME_COUNT), 1))
-        )
+        percent = min(80, 5 + int(70 * index / total_frames))
         if percent > last_progress:
             last_progress = percent
             report(
@@ -278,11 +277,9 @@ def analyze_video(
             consume(index, stored, raw)
         pending = []
 
+    frame_source = _prefetched_frames(cap)
     try:
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
+        for frame in frame_source:
             if frame_index % frame_stride != 0:
                 frame_index += 1
                 continue
@@ -292,6 +289,7 @@ def analyze_video(
                 flush()
         flush()
     finally:
+        frame_source.close()
         cap.release()
         if writer is not None:
             writer.release()
@@ -541,6 +539,44 @@ def finalize_match(
     )
     result.report_html = write_html_report(output_dir / "match_report.html", result)
     return result
+
+
+def _prefetched_frames(cap: cv2.VideoCapture, depth: int = 8):
+    """Decode ahead on a worker thread so the GPU is not idle during video decode."""
+    import queue
+    import threading
+
+    frames: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=depth)
+    stop = threading.Event()
+
+    def reader() -> None:
+        try:
+            while not stop.is_set():
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                while not stop.is_set():
+                    try:
+                        frames.put(frame, timeout=0.2)
+                        break
+                    except queue.Full:
+                        continue
+        finally:
+            while not stop.is_set():
+                try:
+                    frames.put(None, timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
+
+    thread = threading.Thread(target=reader, daemon=True)
+    thread.start()
+    try:
+        while (frame := frames.get()) is not None:
+            yield frame
+    finally:
+        stop.set()
+        thread.join(timeout=5)
 
 
 def _init_mapper(

@@ -61,3 +61,24 @@ jobs:
         run: npm run typecheck
       - name: Production build
         run: npm run build
+
+  footballvision:
+    name: FootballVision tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: footballvision-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: footballvision-ai/requirements-dev.txt
+      - name: Install CPU PyTorch and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-dev.txt
+      - name: Pytest
+        run: pytest

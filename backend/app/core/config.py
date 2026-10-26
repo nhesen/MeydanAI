@@ -90,6 +90,11 @@ class Settings(BaseSettings):
             raise ValueError("CORS_ALLOWED_ORIGINS cannot include a wildcard in production")
         if not self.auth_rate_limit_enabled:
             raise ValueError("AUTH_RATE_LIMIT_ENABLED must stay enabled in production")
+        token = self.internal_worker_token
+        if token is not None and (len(token) < 24 or token.startswith("local-dev")):
+            raise ValueError(
+                "INTERNAL_WORKER_TOKEN must be random and 24+ characters in production"
+            )
         return self
 
 

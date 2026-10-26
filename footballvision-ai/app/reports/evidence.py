@@ -41,6 +41,7 @@ class PlayerEvidence:
         path.write_bytes(encoded.tobytes())
         if replacing is not None:
             candidates.remove(replacing)
+            Path(replacing["path"]).unlink(missing_ok=True)
         candidates.append({"path": str(path), "timestamp_ms": round(time_s*1000),
                            "width": crop.shape[1], "height": crop.shape[0],
                            "score": float(score)})

@@ -103,7 +103,9 @@ def test_ball_rescue_tile_restores_source_coordinates(config):
             calls += 1
             boxes = SimpleNamespace(xyxy=np.array([[10, 20, 16, 26]]),
                                     conf=np.array([.8]), cls=np.array([1]), id=None)
-            return [result(boxes if calls == 5 else None)]
+            # Call 1 is the full frame; call 2 is the four rescue tiles in one batch.
+            return [result(boxes if calls == 2 and index == 3 else None)
+                    for index in range(len(frames))]
 
     detections = FootballDetector(config, Model()).detect(np.zeros((1000, 2000, 3)))
     assert len(detections) == 1

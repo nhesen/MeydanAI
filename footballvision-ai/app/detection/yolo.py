@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from app.core.config import AppConfig
-from app.core.device import resolve_device
+from app.core.device import resolve_device, use_half
 from app.core.types import BBox, Detection, Role
 
 
@@ -33,6 +33,7 @@ class FootballDetector:
     def __init__(self, config: AppConfig, model: Any | None = None) -> None:
         self.config = config
         self.device = resolve_device(config.detection.device)
+        self._half = use_half(self.device)
         self._model = model
         self._ball_detector = None
         self.ball_model_skipped = ""
@@ -82,7 +83,7 @@ class FootballDetector:
         if not self.config.detection.ball_tiles:
             return detected
         # Rescue small balls lost when a wide broadcast frame is reduced to 640px.
-        # Sequential overlapping tiles bound GPU memory; players remain full-frame.
+        # The four overlapping tiles go through one batched call; the OOM retry splits it.
         for frame, detections in zip(frames, detected, strict=True):
             if any(item.role is Role.BALL and item.confidence >= .35 for item in detections):
                 continue
@@ -90,14 +91,15 @@ class FootballDetector:
             if max(h, w) <= self.config.detection.image_size:
                 continue
             tile_w, tile_h = int(w * .6), int(h * .6)
+            origins = [(x, y) for y in (0, h - tile_h) for x in (0, w - tile_w)]
+            tiles = [frame[y:y + tile_h, x:x + tile_w] for x, y in origins]
             candidates = []
-            for y in (0, h - tile_h):
-                for x in (0, w - tile_w):
-                    for item in self._detect_many_raw([frame[y:y+tile_h, x:x+tile_w]])[0]:
-                        if item.role is Role.BALL:
-                            box = item.bbox
-                            item.bbox = BBox(box.x1+x, box.y1+y, box.x2+x, box.y2+y)
-                            candidates.append(item)
+            for (x, y), found in zip(origins, self._detect_many_raw(tiles), strict=True):
+                for item in found:
+                    if item.role is Role.BALL:
+                        box = item.bbox
+                        item.bbox = BBox(box.x1 + x, box.y1 + y, box.x2 + x, box.y2 + y)
+                        candidates.append(item)
             for item in sorted(candidates, key=lambda d: d.confidence, reverse=True):
                 if not any(other.role is Role.BALL and other.bbox.iou(item.bbox) > .3 for other in detections):
                     detections.append(item)
@@ -106,6 +108,7 @@ class FootballDetector:
     def _detect_many_raw(self, frames: list[np.ndarray]) -> list[list[Detection]]:
         if not frames:
             return []
+        options: dict[str, Any] = {"half": True} if self._half else {}
         try:
             results = list(
                 self.model.predict(
@@ -117,7 +120,7 @@ class FootballDetector:
                     ),
                     imgsz=self.config.detection.image_size,
                     device=self.device,
-                    half=self.device not in {"cpu", "none"},
+                    **options,
                 )
             )
         except RuntimeError as exc:

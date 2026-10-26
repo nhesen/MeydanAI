@@ -75,3 +75,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# Local video-analysis benchmark inputs
+colab/match.mp4
+runpod/*.zip
+colab/*.zip

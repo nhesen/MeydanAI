@@ -93,3 +93,24 @@ def test_processing_settings_disable_empty_worker_token() -> None:
     )
 
     assert settings.internal_worker_token is None
+
+
+def test_production_rejects_default_or_short_worker_token() -> None:
+    for token in ("local-dev-worker-token", "short"):
+        with pytest.raises(ValidationError):
+            Settings(
+                _env_file=None,
+                app_env="production",
+                database_url="postgresql+psycopg://user:pass@localhost:5432/meydanai",
+                cors_allowed_origins="https://app.example.com",
+                internal_worker_token=token,
+            )
+
+    settings = Settings(
+        _env_file=None,
+        app_env="production",
+        database_url="postgresql+psycopg://user:pass@localhost:5432/meydanai",
+        cors_allowed_origins="https://app.example.com",
+        internal_worker_token="x" * 32,
+    )
+    assert settings.internal_worker_token == "x" * 32

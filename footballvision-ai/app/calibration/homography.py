@@ -140,10 +140,19 @@ class PitchMapper:
 def detect_visible_pitch(frame: Array) -> list[tuple[float, float]] | None:
     import cv2
 
+    # Output is normalized, so the mask can be built on a downscaled frame.
+    scale = min(1.0, 480 / frame.shape[1])
+    if scale < 1.0:
+        frame = cv2.resize(
+            frame,
+            (max(1, round(frame.shape[1] * scale)), max(1, round(frame.shape[0] * scale))),
+            interpolation=cv2.INTER_AREA,
+        )
     height, width = frame.shape[:2]
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv, (28, 35, 25), (95, 255, 255))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((21, 21), np.uint8))
+    kernel = max(3, round(21 * scale) | 1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((kernel, kernel), np.uint8))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
