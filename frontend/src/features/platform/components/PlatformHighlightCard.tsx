@@ -2,6 +2,7 @@ import { Clapperboard } from "lucide-react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/Badge";
+import { ClipActions } from "@/features/matches/components/ClipActions";
 import { formatTimestamp, reviewedEventTitle } from "@/lib/analytics-formatters";
 import { getApiBaseUrl } from "@/lib/env";
 import type { HighlightType, PlatformHighlight } from "@/types/api";
@@ -58,6 +59,9 @@ export function PlatformHighlightCard({
           {highlight.match_title ?? "Match highlight"}
           {highlight.player_name ? ` · ${highlight.player_name}` : ""}
         </p>
+        {highlight.video_url ? (
+          <ClipActions src={highlight.video_url} title={highlight.title} />
+        ) : null}
         <div className="mt-4">
           <Link
             className="ml-4 inline-flex min-h-11 items-center text-sm font-semibold text-slate-600 hover:text-brand-800"

@@ -190,7 +190,16 @@ def load_motion_results(output: Path) -> list[PlayerMotionResult]:
                 player_id = row.get("player_id") or ""
                 event_type = row.get("event_type") or "custom"
                 extra = _event_extra(row.get("extra"))
-                if extra.get("estimated") or not calibrated:
+                image_event = event_type in {
+                    "pass",
+                    "successful_pass",
+                    "failed_pass",
+                    "tackle",
+                    "interception",
+                    "turnover",
+                    "ball_recovery",
+                }
+                if not image_event and (extra.get("estimated") or not calibrated):
                     continue
                 stamp = int(float(row.get("time_s") or 0) * 1000)
                 title = "Possible " + event_type.replace("_", " ")

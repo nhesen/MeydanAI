@@ -36,12 +36,19 @@ class PlayerPerformanceSummary(BaseModel):
     venue_name: str
     starts_at: datetime
     team: TeamResponse
+    jersey_number: int | None = None
     rating: float | None
     distance_m: float | None
     avg_speed_kmh: float | None
     max_speed_kmh: float | None
     sprint_count: int | None
     active_seconds: int | None
+    passes: int | None = None
+    accurate_passes: int | None = None
+    tackles: int | None = None
+    interceptions: int | None = None
+    goals: int | None = None
+    assists: int | None = None
 
 
 class PlayerDirectoryItem(BaseModel):
@@ -56,6 +63,7 @@ class GlobalPlayerProfile(BaseModel):
     display_name: str
     is_temporary: bool
     recent_performances: list[PlayerPerformanceSummary]
+    highlights: list["PlatformHighlightResponse"] = []
 
 
 class TeamDirectoryItem(BaseModel):
@@ -101,6 +109,7 @@ class DashboardResponse(BaseModel):
     upcoming_matches: list[MatchListItem]
     processing_matches: list[MatchListItem]
     top_players: list["LeaderboardEntry"]
+    top_players_metric: Literal["rating", "passes"] = "rating"
     latest_highlights: list[PlatformHighlightResponse]
 
 
@@ -119,6 +128,10 @@ class TeamAnalyticsSummary(BaseModel):
     average_speed_kmh: float | None
     maximum_speed_kmh: float | None
     sprint_count: int | None
+    passes: int | None = None
+    accurate_passes: int | None = None
+    tackles: int | None = None
+    interceptions: int | None = None
 
 
 class AnalyticsLeaderboardsResponse(BaseModel):
@@ -126,6 +139,9 @@ class AnalyticsLeaderboardsResponse(BaseModel):
     distance_leaders: list[LeaderboardEntry]
     speed_leaders: list[LeaderboardEntry]
     sprint_leaders: list[LeaderboardEntry]
+    pass_leaders: list[LeaderboardEntry] = []
+    tackle_leaders: list[LeaderboardEntry] = []
+    interception_leaders: list[LeaderboardEntry] = []
     team_analytics: list[TeamAnalyticsSummary]
     date_from: date | None
     date_to: date | None

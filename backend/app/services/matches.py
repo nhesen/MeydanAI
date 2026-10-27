@@ -16,6 +16,9 @@ from app.core.analysis_metadata import (
     latest_analysis_job,
     review_metadata,
 )
+from app.core.config import get_settings
+from app.services.caption_stats import caption_involvement
+from app.services.recordings import match_recording
 from app.core.analytics_bounds import (
     MAX_PLAUSIBLE_STEP_KMH,
     SPRINT_KMH,
@@ -116,6 +119,8 @@ _EVENT_TOTALS = {
     "woodwork": "woodwork",
     "successful_pass": "accurate_passes",
     "failed_pass": "failed_passes",
+    "tackle": "tackles",
+    "interception": "interceptions",
 }
 
 
@@ -125,32 +130,43 @@ def apply_event_totals(
     analytics_by_player: dict[uuid.UUID, PlayerMatchAnalytics],
     measured: bool,
 ) -> None:
-    """Fill team shot and pass totals from stored events. Fouls stay unknown."""
-    if not stats or not measured:
+    """Fill team shot and pass totals from stored events. Fouls stay unknown.
+
+    Passes are counted from the image. Shots, goals and xG stay empty until
+    the pitch calibration is trusted.
+    """
+    if not stats:
         return
+    image_events = {"successful_pass", "failed_pass", "tackle", "interception"}
     xg_pattern = re.compile(r"xG\s+([0-9]+(?:\.[0-9]+)?)")
     by_team = {item.team_id: item for item in stats}
     counts: dict[uuid.UUID, Counter[str]] = {team_id: Counter() for team_id in by_team}
     xg = {team_id: 0.0 for team_id in by_team}
     saw_xg = {team_id: False for team_id in by_team}
-    for player in players:
-        analytics = analytics_by_player.get(player.id)
-        if analytics is None or analytics.team_id != player.team.id:
-            continue
-        bucket = counts.get(player.team.id)
+    # Squad names and the counted actions can belong to different rows. The
+    # lineup is who played. Actions stay on the tracks that recorded them.
+    for analytics in analytics_by_player.values():
+        bucket = counts.get(analytics.team_id)
         if bucket is None:
             continue
         for event in analytics.events:
             key = _EVENT_TOTALS.get(event.event_type)
-            if key:
+            if key and (measured or event.event_type in image_events):
                 bucket[key] += 1
-            if event.event_type == "shot":
+            if measured and event.event_type == "shot":
                 found = xg_pattern.search(event.title or "")
                 if found:
-                    xg[player.team.id] += float(found.group(1))
-                    saw_xg[player.team.id] = True
+                    xg[analytics.team_id] += float(found.group(1))
+                    saw_xg[analytics.team_id] = True
     for team_id, item in by_team.items():
         bucket = counts[team_id]
+        item.accurate_passes = bucket["accurate_passes"]
+        item.passes = bucket["accurate_passes"] + bucket["failed_passes"]
+        item.tackles = bucket["tackles"]
+        item.interceptions = bucket["interceptions"]
+        item.fouls = None
+        if not measured:
+            continue
         item.shots = bucket["shots"]
         item.shots_on_target = bucket["shots_on_target"]
         item.goals = bucket["goals"]
@@ -159,10 +175,7 @@ def apply_event_totals(
         item.corners = bucket["corners"]
         item.goal_kicks = bucket["goal_kicks"]
         item.woodwork = bucket["woodwork"]
-        item.accurate_passes = bucket["accurate_passes"]
-        item.passes = bucket["accurate_passes"] + bucket["failed_passes"]
         item.xg = round(xg[team_id], 2) if saw_xg[team_id] else None
-        item.fouls = None
 
 
 class MatchService:
@@ -315,8 +328,11 @@ class MatchService:
         )
         team_stats = aggregate_team_stats(list(players.values()))
         apply_event_totals(team_stats, list(players.values()), analytics_by_player, measured)
+        match_response = self.to_match_response(match)
+        if self._has_recording(match.id):
+            match_response.recording_url = f"/api/v1/public/matches/{match.id}/recording"
         return MatchDetailResponse(
-            match=self.to_match_response(match),
+            match=match_response,
             players=sorted(players.values(), key=lambda item: item.display_name.casefold()),
             team_stats=team_stats,
             analysis_quality=analysis_quality(self.session, match_id),
@@ -356,6 +372,7 @@ class MatchService:
                 "PLAYER_NOT_IN_MATCH",
             )
         analytics = self.repository.get_player_analytics(match_id, player_id)
+        goals, assists = self._caption_counts(match_id, player_id)
         if analytics is None:
             return PlayerAnalyticsDetailResponse(
                 match=detail.match,
@@ -364,6 +381,8 @@ class MatchService:
                 intensity_buckets=[],
                 events=[],
                 analysis_quality=player.analysis_quality,
+                goals=goals,
+                assists=assists,
             )
         reviews = review_metadata(latest_analysis_job(self.session, match_id))
         events = sanitize_events(
@@ -418,6 +437,30 @@ class MatchService:
             intensity_buckets=intensity_buckets,
             events=events,
             analysis_quality=player.analysis_quality,
+            goals=goals,
+            assists=assists,
+        )
+
+    def _has_recording(self, match_id: uuid.UUID) -> bool:
+        return (
+            match_recording(self.session, match_id, get_settings().video_storage_path) is not None
+        )
+
+    def _caption_counts(
+        self,
+        match_id: uuid.UUID,
+        player_id: uuid.UUID,
+    ) -> tuple[int | None, int | None]:
+        board = caption_involvement(
+            self.session,
+            match_ids={match_id},
+            player_ids=[player_id],
+        )
+        if match_id not in board.matches_with_captions:
+            return None, None
+        return (
+            board.goals.get((player_id, match_id), 0),
+            board.assists.get((player_id, match_id), 0),
         )
 
     def compare_players(

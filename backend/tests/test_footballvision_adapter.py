@@ -122,7 +122,7 @@ def test_estimated_events_are_not_ingested_and_xg_stays_on_the_shot(tmp_path: Pa
     )
     tracks = load_motion_results(tmp_path)
     titles = {item[0]: item[3] for item in tracks[0].events}
-    assert "pass" not in titles
+    assert titles["pass"] == "Possible pass"
     assert titles["shot"] == "Possible shot · xG 0.42"
     assert titles["big_chance"] == "Possible big chance · xG 0.42"
     AnalyticsEventIngest(event_type="big_chance", timestamp_ms=4000, title=titles["big_chance"])

@@ -132,9 +132,23 @@ def build_team_stats(
     return result
 
 
+# These are counted from the image even when the pitch has no metre calibration.
+# Shots, goals and xG stay out of that set: they need a trusted pitch.
+_IMAGE_EVENTS = {
+    EventType.PASS,
+    EventType.SUCCESSFUL_PASS,
+    EventType.FAILED_PASS,
+    EventType.TACKLE,
+    EventType.INTERCEPTION,
+    EventType.TURNOVER,
+    EventType.BALL_RECOVERY,
+}
+
+
 def _count(events: list[MatchEvent], kind: EventType) -> int:
     return sum(
         1
         for event in events
-        if event.event_type is kind and not event.extra.get("estimated")
+        if event.event_type is kind
+        and (kind in _IMAGE_EVENTS or not event.extra.get("estimated"))
     )

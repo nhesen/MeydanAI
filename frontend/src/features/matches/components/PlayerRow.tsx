@@ -29,9 +29,15 @@ export function PlayerRow({ matchId, player }: PlayerRowProps) {
         {player.analysis_quality ? <span className="mt-1 block"><Badge variant={player.analysis_quality.identity_mapping === "confirmed" ? "success" : "warning"}>{player.analysis_quality.identity_mapping === "confirmed" ? "Identity reviewed" : "Identity estimated"}</Badge></span> : null}
       </span>
       <span className="text-right">
-        <span className="type-stat-label block">RATING</span>
+        <span className="type-stat-label block">
+          {player.rating != null ? "RATING" : "ACTIVE"}
+        </span>
         <span className="mt-0.5 block text-sm font-bold text-slate-700">
-          {player.rating ?? "N/A"}
+          {player.rating != null
+            ? player.rating.toFixed(1)
+            : player.active_seconds != null
+              ? `${player.active_seconds}s`
+              : "—"}
         </span>
       </span>
       <ChevronRight className="size-4 text-slate-400" aria-hidden="true" />

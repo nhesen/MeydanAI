@@ -156,7 +156,10 @@ export function PlayerMatchDetail({
         </Card>
       ) : null}
 
-      {player.analytics_status !== "processing" && !hasAnyMetric ? (
+      {player.analytics_status !== "processing" &&
+      !hasAnyMetric &&
+      detail.goals == null &&
+      detail.assists == null ? (
         <Card className="mt-5">
           <EmptyState
             compact
@@ -175,11 +178,26 @@ export function PlayerMatchDetail({
         <Card>
           <h2 className="type-section-title text-slate-950">Position heatmap</h2>
           <p className="mb-4 mt-1 text-sm text-slate-500">
-            {quality?.physical_metrics_available
-              ? "Measured pitch positions. Empty areas were not observed."
-              : "Camera positions only. This is not a measured pitch heatmap, and it is not metres."}
+            {detail.position_samples.length
+              ? quality?.physical_metrics_available
+                ? "Measured pitch positions. Empty areas were not observed."
+                : "Camera positions only. This is not a measured pitch heatmap, and it is not metres."
+              : "Positions from this video are not tied to this name, so the map stays empty."}
           </p>
+          {(detail.goals != null || detail.assists != null) && (
+            <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-subtle p-3 text-center">
+              <div>
+                <p className="text-lg font-bold tabular-nums text-slate-950">{detail.goals ?? 0}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">Goals</p>
+              </div>
+              <div>
+                <p className="text-lg font-bold tabular-nums text-slate-950">{detail.assists ?? 0}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">Assists</p>
+              </div>
+            </div>
+          )}
           <PlayerHeatmap
+            emptyLabel="No personal positions yet. A large readable mark on the shirt is what ties the next match to this player."
             lengthM={quality?.pitch_length_m}
             measured={quality?.physical_metrics_available ?? false}
             processing={player.analytics_status === "processing"}

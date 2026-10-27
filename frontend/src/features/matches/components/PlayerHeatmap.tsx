@@ -10,6 +10,7 @@ interface PlayerHeatmapProps {
   measured?: boolean;
   lengthM?: number | null;
   widthM?: number | null;
+  emptyLabel?: string;
 }
 
 interface DensityPoint {
@@ -26,6 +27,7 @@ const NEIGHBOR_WEIGHT = 0.35;
 const DIAGONAL_WEIGHT = 0.16;
 
 export function PlayerHeatmap({
+  emptyLabel = "Heatmap data is not available for this player yet.",
   lengthM = 40,
   measured = false,
   processing = false,
@@ -87,9 +89,7 @@ export function PlayerHeatmap({
         {samples.length === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center bg-white/55 px-6 text-center">
             <p className="max-w-xs text-sm font-semibold text-slate-700">
-              {processing
-                ? "Heatmap is being generated."
-                : "Heatmap data is not available for this player yet."}
+              {processing ? "Heatmap is being generated." : emptyLabel}
             </p>
           </div>
         ) : null}

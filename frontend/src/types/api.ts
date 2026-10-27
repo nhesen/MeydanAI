@@ -42,6 +42,7 @@ export interface MatchSummary {
     | "failed"
     | "cancelled";
   teams: MatchTeam[];
+  recording_url?: string | null;
 }
 
 export interface PlayerSummary {
@@ -158,6 +159,8 @@ export interface PlayerAnalyticsDetail {
   intensity_buckets: IntensityBucket[];
   events: PlayerAnalyticsEvent[];
   analysis_quality?: AnalysisQuality;
+  goals?: number | null;
+  assists?: number | null;
 }
 
 export type EventReviewStatus = "pending" | "confirmed" | "rejected";
@@ -279,12 +282,19 @@ export interface PlayerPerformanceSummary {
   venue_name: string;
   starts_at: string;
   team: MatchTeam;
+  jersey_number?: number | null;
   rating: number | null;
   distance_m: number | null;
   avg_speed_kmh: number | null;
   max_speed_kmh: number | null;
   sprint_count: number | null;
   active_seconds: number | null;
+  passes?: number | null;
+  accurate_passes?: number | null;
+  tackles?: number | null;
+  interceptions?: number | null;
+  goals?: number | null;
+  assists?: number | null;
 }
 
 export interface PlayerDirectoryItem {
@@ -299,6 +309,7 @@ export interface GlobalPlayerProfile {
   display_name: string;
   is_temporary: boolean;
   recent_performances: PlayerPerformanceSummary[];
+  highlights?: PlatformHighlight[];
 }
 
 export interface TeamDirectoryItem {
@@ -353,6 +364,10 @@ export interface TeamAnalyticsSummary {
   average_speed_kmh: number | null;
   maximum_speed_kmh: number | null;
   sprint_count: number | null;
+  passes?: number | null;
+  accurate_passes?: number | null;
+  tackles?: number | null;
+  interceptions?: number | null;
 }
 
 export interface AnalyticsLeaderboards {
@@ -360,6 +375,9 @@ export interface AnalyticsLeaderboards {
   distance_leaders: LeaderboardEntry[];
   speed_leaders: LeaderboardEntry[];
   sprint_leaders: LeaderboardEntry[];
+  pass_leaders?: LeaderboardEntry[];
+  tackle_leaders?: LeaderboardEntry[];
+  interception_leaders?: LeaderboardEntry[];
   team_analytics: TeamAnalyticsSummary[];
   date_from: string | null;
   date_to: string | null;
@@ -377,6 +395,7 @@ export interface DashboardData {
   upcoming_matches: MatchListItem[];
   processing_matches: MatchListItem[];
   top_players: LeaderboardEntry[];
+  top_players_metric?: "rating" | "passes";
   latest_highlights: PlatformHighlight[];
 }
 
@@ -398,6 +417,8 @@ export interface TeamStats {
   woodwork?: number | null;
   passes?: number | null;
   accurate_passes?: number | null;
+  tackles?: number | null;
+  interceptions?: number | null;
   fouls?: number | null;
 }
 

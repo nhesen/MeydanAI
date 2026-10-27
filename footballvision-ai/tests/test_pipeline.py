@@ -58,6 +58,27 @@ def test_reidentification_does_not_merge_players_across_camera_cuts(config):
     assert len(IdentityRepair(config).merge({1: first, 2: second})) == 2
 
 
+def test_wide_grass_quad_is_metric_hali_saha_calibration(config):
+    frame = np.zeros((240, 480, 3), dtype=np.uint8)
+    frame[40:190, 0:480] = (40, 140, 40)
+    mapper = pipeline.trusted_visible_pitch(frame, config)
+    assert mapper is not None
+    assert mapper.calibrated
+    assert mapper.calibration_source == "visible-pitch"
+    assert mapper.to_world(100, 50) is not None
+
+
+def test_inset_graphic_is_not_a_pitch(config):
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+    frame[20:80, 60:140] = (40, 140, 40)
+    assert pipeline.trusted_visible_pitch(frame, config) is None
+
+
+def test_full_picture_grass_is_not_the_pitch(config):
+    frame = np.full((100, 200, 3), (40, 140, 40), dtype=np.uint8)
+    assert pipeline.trusted_visible_pitch(frame, config) is None
+
+
 def test_automatic_grass_mapping_is_an_estimate(config):
     frame = np.full((100, 200, 3), (40, 120, 40), dtype=np.uint8)
     mapper = pipeline._init_mapper(frame, config, 200, 100, [])

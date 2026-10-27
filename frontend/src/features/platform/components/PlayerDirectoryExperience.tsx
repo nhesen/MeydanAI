@@ -27,6 +27,7 @@ import { api } from "@/services/api-client";
 import type {
   PageResponse,
   PlayerDirectoryItem,
+  PlayerPerformanceSummary,
   TeamDirectoryItem,
 } from "@/types/api";
 
@@ -175,23 +176,40 @@ export function PlayerDirectoryCard({
             {player.display_name}
           </h2>
           <p className="mt-1 truncate text-sm text-slate-500">
+            {performance?.jersey_number != null ? `#${performance.jersey_number} · ` : ""}
             {performance?.team.name ?? "No recent team context"}
           </p>
         </div>
-        {performance ? (
-          <Badge variant={performance.rating === null ? "neutral" : "brand"}>
-            {formatRating(performance.rating)}
-          </Badge>
+        {performance?.rating != null ? (
+          <Badge variant="brand">{formatRating(performance.rating)}</Badge>
         ) : null}
       </div>
-      {performance ? (
+      {performance && hasVisibleStats(performance) ? (
         <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-subtle p-3 text-center">
-          <Metric label="Distance" value={formatDistance(performance.distance_m)} />
-          <Metric label="Max speed" value={formatSpeed(performance.max_speed_kmh)} />
-          <Metric
-            label="Sprints"
-            value={performance.sprint_count?.toString() ?? "N/A"}
-          />
+          {performance.distance_m == null && performance.max_speed_kmh == null ? (
+            performance.goals != null || performance.assists != null ? (
+              <>
+                <Metric label="Goals" value={String(performance.goals ?? 0)} />
+                <Metric label="Assists" value={String(performance.assists ?? 0)} />
+                <Metric label="Passes" value={performance.passes ? `${performance.accurate_passes ?? 0}/${performance.passes}` : "—"} />
+              </>
+            ) : (
+            <>
+              <Metric
+                label="Passes"
+                value={`${performance.accurate_passes ?? 0}/${performance.passes ?? 0}`}
+              />
+              <Metric label="Tackles" value={String(performance.tackles ?? 0)} />
+              <Metric label="Interceptions" value={String(performance.interceptions ?? 0)} />
+            </>
+            )
+          ) : (
+            <>
+              <Metric label="Distance" value={formatDistance(performance.distance_m)} />
+              <Metric label="Max speed" value={formatSpeed(performance.max_speed_kmh)} />
+              <Metric label="Sprints" value={performance.sprint_count?.toString() ?? "N/A"} />
+            </>
+          )}
         </div>
       ) : (
         <div className="mt-4 flex items-center gap-2 rounded-xl bg-subtle p-3 text-sm text-slate-500">
@@ -200,6 +218,17 @@ export function PlayerDirectoryCard({
         </div>
       )}
     </Link>
+  );
+}
+
+function hasVisibleStats(performance: PlayerPerformanceSummary) {
+  if (performance.distance_m != null || performance.max_speed_kmh != null) return true;
+  if (performance.goals != null || performance.assists != null) return true;
+  return (
+    (performance.passes ?? 0) +
+      (performance.tackles ?? 0) +
+      (performance.interceptions ?? 0) >
+    0
   );
 }
 

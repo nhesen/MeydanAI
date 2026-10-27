@@ -66,13 +66,15 @@ export function PlayerKpiGrid({ player }: PlayerKpiGridProps) {
     },
   ];
 
+  const visible = items.filter((item) => item.value !== "N/A");
+  if (visible.length === 0) return null;
   return (
     <section aria-labelledby="performance-kpis">
       <h2 className="type-section-title text-slate-950" id="performance-kpis">
         Performance
       </h2>
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {items.map(({ className, detail, icon: Icon, label, value }) => (
+        {visible.map(({ className, detail, icon: Icon, label, value }) => (
           <Card className="min-h-32" key={label} padding="sm">
             <div className="flex items-start justify-between gap-2">
               <span className="flex size-9 items-center justify-center rounded-lg bg-subtle text-brand-700">

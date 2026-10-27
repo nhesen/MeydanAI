@@ -125,6 +125,8 @@ def test_player_search_team_filter_and_team_counts(session: Session) -> None:
 
     assert players.total == 1
     assert players.items[0].id == player.player.id
+    assert players.items[0].recent_performance is not None
+    assert players.items[0].recent_performance.jersey_number == 7
     assert teams.total == 1
     assert teams.items[0].player_count == 1
     assert teams.items[0].match_count == 1

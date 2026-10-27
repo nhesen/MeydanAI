@@ -12,6 +12,7 @@ from app.models.domain import (
     Match,
     MatchTeam,
     Player,
+    PlayerAnalyticsEvent,
     PlayerMatchAnalytics,
     Team,
 )
@@ -85,7 +86,11 @@ class PlatformRepository:
         page: int,
         page_size: int,
     ) -> tuple[list[Player], int]:
-        filters = []
+        filters = [
+            Player.id.in_(select(JerseyAssignment.player_id)),
+            ~Player.display_name.ilike("Oyuncu %"),
+            ~Player.display_name.ilike("Detected %"),
+        ]
         if query:
             filters.append(Player.display_name.ilike(f"%{query.strip()}%"))
         if team_id:
@@ -189,13 +194,14 @@ class PlatformRepository:
         return cast(tuple[Team, int, int] | None, row)
 
     def list_team_players(self, team_id: uuid.UUID) -> list[Player]:
+        squad_number = func.min(JerseyAssignment.jersey_number)
         return list(
             self.session.scalars(
                 select(Player)
                 .join(JerseyAssignment, JerseyAssignment.player_id == Player.id)
                 .where(JerseyAssignment.team_id == team_id)
-                .distinct()
-                .order_by(Player.display_name)
+                .group_by(Player.id)
+                .order_by(squad_number, Player.display_name)
             )
         )
 
@@ -242,7 +248,9 @@ class PlatformRepository:
             .select_from(Match)
             .where(Match.status == "completed")
             .scalar_subquery(),
-            select(func.count()).select_from(Player).scalar_subquery(),
+            select(func.count(distinct(JerseyAssignment.player_id)))
+            .select_from(JerseyAssignment)
+            .scalar_subquery(),
             select(func.count()).select_from(Team).scalar_subquery(),
             select(func.count(distinct(PlayerMatchAnalytics.match_id)))
             .select_from(PlayerMatchAnalytics)
@@ -292,6 +300,7 @@ class PlatformRepository:
             .join(Match, Match.id == PlayerMatchAnalytics.match_id)
             .where(*filters)
             .where(~Player.display_name.ilike("Detected %"))
+            .where(~Player.display_name.ilike("Oyuncu %"))
             .group_by(Player.id, Player.display_name)
             .having(func.count(distinct(PlayerMatchAnalytics.match_id)) >= minimum_matches)
         )
@@ -309,6 +318,91 @@ class PlatformRepository:
             ],
             list(self.session.execute(statement)),
         )
+
+    def event_leader_rows(
+        self,
+        event_types: set[str],
+        *,
+        team_id: uuid.UUID | None,
+        date_from: date | None,
+        date_to: date | None,
+        minimum_matches: int,
+    ) -> list[tuple[uuid.UUID, str, int, int]]:
+        filters = [PlayerAnalyticsEvent.event_type.in_(event_types)]
+        if team_id:
+            filters.append(PlayerMatchAnalytics.team_id == team_id)
+        if date_from:
+            filters.append(func.date(Match.starts_at) >= date_from)
+        if date_to:
+            filters.append(func.date(Match.starts_at) <= date_to)
+        statement = (
+            select(
+                Player.id,
+                Player.display_name,
+                func.count(distinct(PlayerMatchAnalytics.match_id)),
+                func.count(PlayerAnalyticsEvent.id),
+            )
+            .join(PlayerMatchAnalytics, PlayerMatchAnalytics.player_id == Player.id)
+            .join(Match, Match.id == PlayerMatchAnalytics.match_id)
+            .join(
+                PlayerAnalyticsEvent,
+                PlayerAnalyticsEvent.analytics_id == PlayerMatchAnalytics.id,
+            )
+            .where(*filters)
+            .where(~Player.display_name.ilike("Detected %"))
+            .where(~Player.display_name.ilike("Oyuncu %"))
+            .group_by(Player.id, Player.display_name)
+            .having(func.count(distinct(PlayerMatchAnalytics.match_id)) >= minimum_matches)
+            .order_by(func.count(PlayerAnalyticsEvent.id).desc())
+            .limit(10)
+        )
+        return cast(
+            list[tuple[uuid.UUID, str, int, int]],
+            list(self.session.execute(statement)),
+        )
+
+    def team_event_rows(
+        self,
+        *,
+        date_from: date | None,
+        date_to: date | None,
+    ) -> dict[uuid.UUID, tuple[int, int, int, int]]:
+        filters = []
+        if date_from:
+            filters.append(func.date(Match.starts_at) >= date_from)
+        if date_to:
+            filters.append(func.date(Match.starts_at) <= date_to)
+        statement = (
+            select(
+                PlayerMatchAnalytics.team_id,
+                PlayerAnalyticsEvent.event_type,
+                func.count(PlayerAnalyticsEvent.id),
+            )
+            .join(Match, Match.id == PlayerMatchAnalytics.match_id)
+            .join(
+                PlayerAnalyticsEvent,
+                PlayerAnalyticsEvent.analytics_id == PlayerMatchAnalytics.id,
+            )
+            .where(*filters)
+            .where(
+                PlayerAnalyticsEvent.event_type.in_(
+                    ("successful_pass", "failed_pass", "tackle", "interception")
+                )
+            )
+            .group_by(PlayerMatchAnalytics.team_id, PlayerAnalyticsEvent.event_type)
+        )
+        totals: dict[uuid.UUID, dict[str, int]] = {}
+        for team_id, event_type, count in self.session.execute(statement):
+            totals.setdefault(team_id, {})[str(event_type)] = int(count)
+        return {
+            team_id: (
+                counts.get("successful_pass", 0) + counts.get("failed_pass", 0),
+                counts.get("successful_pass", 0),
+                counts.get("tackle", 0),
+                counts.get("interception", 0),
+            )
+            for team_id, counts in totals.items()
+        }
 
     def team_analytics_rows(
         self,

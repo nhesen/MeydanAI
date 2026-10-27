@@ -44,6 +44,22 @@ def test_pass_shot_and_goal_on_synthetic_hali_saha(config: AppConfig, tmp_out) -
     assert (tmp_out / "heatmaps" / "home.png").is_file()
 
 
+def test_image_events_stay_visible_when_the_pitch_is_not_measured() -> None:
+    from app.analytics.stats import _count
+    from app.core.types import MatchEvent
+
+    events = [
+        MatchEvent(
+            EventType.SUCCESSFUL_PASS, 1.0, 10, 4, TeamId.HOME, extra={"estimated": True}
+        ),
+        MatchEvent(EventType.SHOT, 2.0, 20, 4, TeamId.HOME, extra={"estimated": True}),
+        MatchEvent(EventType.GOAL, 3.0, 30, 4, TeamId.HOME, extra={"estimated": True}),
+    ]
+    assert _count(events, EventType.SUCCESSFUL_PASS) == 1
+    assert _count(events, EventType.SHOT) == 0
+    assert _count(events, EventType.GOAL) == 0
+
+
 def test_reid_merges_gap_with_matching_appearance(config: AppConfig) -> None:
     from app.core.types import BBox, PlayerTrack, TrackSample
     from app.tracking.reid import IdentityRepair

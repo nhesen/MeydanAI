@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { MATCH_STATUS } from "@/config/match-status";
+import { ClipActions } from "@/features/matches/components/ClipActions";
 import { MatchHeader } from "@/features/matches/components/MatchHeader";
 import { AnalysisQualityPanel } from "@/features/matches/components/AnalysisQualityPanel";
 import { PlayerComparison } from "@/features/matches/components/PlayerComparison";
@@ -140,6 +141,29 @@ function OverviewTab({ detail }: { detail: MatchDetail }) {
   const analyzedPlayers = detail.players.filter((player) => player.analytics_status === "available");
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.8fr)]">
+      {detail.match.recording_url ? (
+        <Card className="lg:col-span-2">
+          <SectionHeader
+            description="The uploaded match recording."
+            title="Full match"
+          />
+          <video
+            className="mt-4 aspect-video w-full rounded-xl bg-slate-950"
+            controls
+            playsInline
+            preload="metadata"
+            src={
+              detail.match.recording_url.startsWith("http")
+                ? detail.match.recording_url
+                : `${getApiBaseUrl()}${detail.match.recording_url}`
+            }
+          />
+          <ClipActions
+            src={detail.match.recording_url}
+            title={detail.match.title ?? "Match recording"}
+          />
+        </Card>
+      ) : null}
       <Card>
         <SectionHeader
           action={<Badge variant={status.variant}>{status.shortLabel}</Badge>}
@@ -412,6 +436,7 @@ function HighlightsTab({ detail }: { detail: MatchDetail }) {
                   {videoOffset(detail.match.starts_at, item.occurred_at)}
                 </span>
               </div>
+              {item.video_url ? <ClipActions src={item.video_url} title={item.title} /> : null}
             </li>
           ))}
         </ul>
@@ -465,6 +490,10 @@ function TeamComparison({
           : `${stat.maximum_speed_kmh.toFixed(1)} km/h`,
     },
     {
+      label: "Goals",
+      value: (stat) => stat.goals?.toString() ?? "N/A",
+    },
+    {
       label: "Shots",
       value: (stat) => stat.shots?.toString() ?? "N/A",
     },
@@ -504,6 +533,14 @@ function TeamComparison({
           : `${stat.accurate_passes ?? 0}/${stat.passes}`,
     },
     {
+      label: "Tackles",
+      value: (stat) => stat.tackles?.toString() ?? "N/A",
+    },
+    {
+      label: "Interceptions",
+      value: (stat) => stat.interceptions?.toString() ?? "N/A",
+    },
+    {
       label: "Fouls",
       value: () => "N/A",
     },
@@ -514,6 +551,11 @@ function TeamComparison({
   ];
   const firstStats = stats.find((item) => item.team_id === teams[0]?.id);
   const secondStats = stats.find((item) => item.team_id === teams[1]?.id);
+  const visible = metrics.filter((metric) => {
+    const left = firstStats ? metric.value(firstStats) : "N/A";
+    const right = secondStats ? metric.value(secondStats) : "N/A";
+    return left !== "N/A" || right !== "N/A";
+  });
   return (
     <div className="mt-5">
       <div className="grid grid-cols-[1fr_auto_1fr] gap-2 text-xs font-bold text-slate-500">
@@ -521,7 +563,7 @@ function TeamComparison({
         <span />
         <span className="text-right">{teams[1]?.name}</span>
       </div>
-      {metrics.map((metric) => (
+      {visible.map((metric) => (
         <div
           className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border py-4 last:border-0"
           key={metric.label}

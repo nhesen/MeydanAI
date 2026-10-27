@@ -16,6 +16,7 @@ from app.models.domain import (
     Team,
 )
 from app.repositories.platform import PlatformRepository
+from app.services.caption_stats import caption_involvement
 from app.schemas.matches import TeamResponse
 from app.schemas.platform import (
     AnalyticsLeaderboardsResponse,
@@ -34,6 +35,21 @@ from app.schemas.platform import (
     TeamDirectoryItem,
 )
 from app.services.matches import MatchService
+
+
+def _event_counts(events: list[object]) -> tuple[int, int, int, int]:
+    passes = accurate = tackles = interceptions = 0
+    for event in events:
+        kind = getattr(event, "event_type", None)
+        if kind in {"successful_pass", "failed_pass"}:
+            passes += 1
+        if kind == "successful_pass":
+            accurate += 1
+        elif kind == "tackle":
+            tackles += 1
+        elif kind == "interception":
+            interceptions += 1
+    return passes, accurate, tackles, interceptions
 
 
 class PlatformService:
@@ -89,7 +105,7 @@ class PlatformService:
                 id=player.id,
                 display_name=player.display_name,
                 is_temporary=player.is_temporary,
-                recent_performance=contexts.get(player.id, [None])[0],
+                recent_performance=(contexts.get(player.id) or [None])[0],
             )
             for player in players
         ]
@@ -100,11 +116,13 @@ class PlatformService:
         if player is None:
             raise self._not_found("Player was not found.", "PLAYER_NOT_FOUND")
         contexts = self._performance_contexts([player.id]).get(player.id, [])
+        clips = self._caption_clips(player.id, [item.match_id for item in contexts])
         return GlobalPlayerProfile(
             id=player.id,
             display_name=player.display_name,
             is_temporary=player.is_temporary,
             recent_performances=contexts[:10],
+            highlights=clips,
         )
 
     def list_teams(
@@ -158,7 +176,7 @@ class PlatformService:
                     id=player.id,
                     display_name=player.display_name,
                     is_temporary=player.is_temporary,
-                    recent_performance=contexts.get(player.id, [None])[0],
+                    recent_performance=(contexts.get(player.id) or [None])[0],
                 )
                 for player in players
             ],
@@ -215,7 +233,28 @@ class PlatformService:
                 for row in available[:10]
             ]
 
+        def event_leaders(event_types: set[str]) -> list[LeaderboardEntry]:
+            return [
+                LeaderboardEntry(
+                    player_id=row[0],
+                    display_name=row[1],
+                    match_count=row[2],
+                    value=float(row[3]),
+                )
+                for row in self.repository.event_leader_rows(
+                    event_types,
+                    team_id=team_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                    minimum_matches=minimum_matches,
+                )
+            ]
+
         team_rows = self.repository.team_analytics_rows(
+            date_from=date_from,
+            date_to=date_to,
+        )
+        event_totals = self.repository.team_event_rows(
             date_from=date_from,
             date_to=date_to,
         )
@@ -224,6 +263,9 @@ class PlatformService:
             distance_leaders=leaders(4),
             speed_leaders=leaders(5),
             sprint_leaders=leaders(6),
+            pass_leaders=event_leaders({"successful_pass", "failed_pass"}),
+            tackle_leaders=event_leaders({"tackle"}),
+            interception_leaders=event_leaders({"interception"}),
             team_analytics=[
                 TeamAnalyticsSummary(
                     team_id=row[0],
@@ -235,6 +277,10 @@ class PlatformService:
                     else None,
                     maximum_speed_kmh=clamp_speed(row[5]) if row[5] is not None else None,
                     sprint_count=row[6],
+                    passes=event_totals.get(row[0], (None, None, None, None))[0],
+                    accurate_passes=event_totals.get(row[0], (None, None, None, None))[1],
+                    tackles=event_totals.get(row[0], (None, None, None, None))[2],
+                    interceptions=event_totals.get(row[0], (None, None, None, None))[3],
                 )
                 for row in team_rows
             ],
@@ -286,6 +332,7 @@ class PlatformService:
             date_to=None,
             minimum_matches=1,
         )
+        ranked_by_passes = not leaderboard.rating_leaders
         return DashboardResponse(
             quick_stats=QuickStatsResponse(
                 total_matches=total,
@@ -297,7 +344,8 @@ class PlatformService:
             recent_matches=self._match_items(recent),
             upcoming_matches=self._match_items(upcoming),
             processing_matches=self._match_items(processing),
-            top_players=leaderboard.rating_leaders[:5],
+            top_players=(leaderboard.pass_leaders if ranked_by_passes else leaderboard.rating_leaders)[:5],
+            top_players_metric="passes" if ranked_by_passes else "rating",
             latest_highlights=[
                 self._highlight_response(highlight, match, player)
                 for highlight, match, player in highlights
@@ -328,14 +376,53 @@ class PlatformService:
             if key in seen:
                 continue
             seen.add(key)
-            contexts[assignment.player_id].append(self._performance_summary(match, team, analytics))
+            contexts[assignment.player_id].append(
+                self._performance_summary(match, team, analytics, assignment.jersey_number)
+            )
+        self._apply_caption_scores(contexts)
         return contexts
+
+    def _apply_caption_scores(
+        self,
+        contexts: dict[uuid.UUID, list[PlayerPerformanceSummary]],
+    ) -> None:
+        match_ids = {item.match_id for items in contexts.values() for item in items}
+        board = caption_involvement(
+            self.session,
+            match_ids=match_ids,
+            player_ids=list(contexts),
+        )
+        for player_id, items in contexts.items():
+            for item in items:
+                if item.match_id not in board.matches_with_captions:
+                    continue
+                item.goals = board.goals.get((player_id, item.match_id), 0)
+                item.assists = board.assists.get((player_id, item.match_id), 0)
+
+    def _caption_clips(
+        self,
+        player_id: uuid.UUID,
+        match_ids: list[uuid.UUID],
+    ) -> list[PlatformHighlightResponse]:
+        board = caption_involvement(
+            self.session,
+            match_ids=set(match_ids),
+            player_ids=[player_id],
+        )
+        clips = []
+        for highlight in board.clips.get(player_id, []):
+            match = self.session.get(Match, highlight.match_id)
+            player = self.session.get(Player, highlight.player_id) if highlight.player_id else None
+            if match is not None:
+                clips.append(self._highlight_response(highlight, match, player))
+        return clips
 
     def _performance_summary(
         self,
         match: Match,
         team: Team,
         analytics: PlayerMatchAnalytics | None,
+        jersey_number: int | None = None,
     ) -> PlayerPerformanceSummary:
         if analytics is None:
             return PlayerPerformanceSummary(
@@ -344,6 +431,7 @@ class PlatformService:
                 venue_name=match.venue_name,
                 starts_at=match.starts_at,
                 team=TeamResponse(id=team.id, name=team.name),
+                jersey_number=jersey_number,
                 rating=None,
                 distance_m=None,
                 avg_speed_kmh=None,
@@ -351,6 +439,7 @@ class PlatformService:
                 sprint_count=None,
                 active_seconds=None,
             )
+        counted = _event_counts(analytics.events)
         metrics = sanitize_player_metrics(
             rating=analytics.rating,
             distance_m=analytics.distance_m,
@@ -368,12 +457,17 @@ class PlatformService:
             venue_name=match.venue_name,
             starts_at=match.starts_at,
             team=TeamResponse(id=team.id, name=team.name),
+            jersey_number=jersey_number,
             rating=metrics.rating,
             distance_m=metrics.distance_m,
             avg_speed_kmh=metrics.avg_speed_kmh,
             max_speed_kmh=metrics.max_speed_kmh,
             sprint_count=metrics.sprint_count,
             active_seconds=metrics.active_seconds,
+            passes=counted[0],
+            accurate_passes=counted[1],
+            tackles=counted[2],
+            interceptions=counted[3],
         )
 
     def _highlight_response(

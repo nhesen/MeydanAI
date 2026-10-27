@@ -23,7 +23,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Card } from "@/components/ui/Card";
 import { PlatformHighlightCard } from "@/features/platform/components/PlatformHighlightCard";
 import { PlatformMatchCard } from "@/features/platform/components/PlatformMatchCard";
-import { formatRating } from "@/lib/analytics-formatters";
+import { formatCount, formatRating } from "@/lib/analytics-formatters";
 import { api } from "@/services/api-client";
 import type { DashboardData } from "@/types/api";
 
@@ -201,7 +201,7 @@ export function DashboardExperience() {
           <SectionHeader
             action={<SectionLink href="/analytics">Rankings</SectionLink>}
             id="top-players"
-            title="Top rated players"
+            title={data.top_players_metric === "passes" ? "Most passes" : "Top rated players"}
           />
           <Card className="mt-4" padding="none">
             {data.top_players.length ? (
@@ -223,7 +223,9 @@ export function DashboardExperience() {
                         {player.display_name}
                       </span>
                       <span className="font-bold tabular-nums text-brand-800">
-                        {formatRating(player.value)}
+                        {data.top_players_metric === "passes"
+                          ? formatCount(player.value)
+                          : formatRating(player.value)}
                       </span>
                     </Link>
                   </li>

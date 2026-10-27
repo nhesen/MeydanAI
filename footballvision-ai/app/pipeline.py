@@ -15,7 +15,12 @@ from app.analytics.heatmap import render_heatmap, team_tracks
 from app.analytics.physics import motion_intensity
 from app.analytics.stats import build_player_stats, build_team_stats
 from app.calibration.camera import CameraCompensator
-from app.calibration.homography import PitchMapper, detect_visible_pitch, pitch_outline
+from app.calibration.homography import (
+    PitchMapper,
+    detect_visible_pitch,
+    pitch_outline,
+    trusted_visible_pitch,
+)
 from app.calibration.keypoints import KeypointCalibrator
 from app.calibration.zones import PitchZones
 from app.core.config import AppConfig, load_config
@@ -178,6 +183,12 @@ def analyze_video(
             source = "manual" if valid else "relative"
         else:
             mapper = None
+        if mapper is None and calibration_mode != "manual":
+            visible = trusted_visible_pitch(frame, cfg)
+            if visible is not None:
+                mapper = visible
+                source = "visible-pitch"
+                quality = {"valid": True, "source": source, "reason": None}
         metric_frame = bool(mapper and mapper.calibrated and quality["valid"])
         calibration_frames.append({"frame": index, "timestamp_ms": round(time_s*1000), **quality})
 

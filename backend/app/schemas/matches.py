@@ -77,6 +77,7 @@ class MatchResponse(BaseModel):
     away_score: int | None
     status: str
     teams: list[TeamResponse]
+    recording_url: str | None = None
 
 
 class MatchStateUpdate(BaseModel):
@@ -171,6 +172,8 @@ class PlayerAnalyticsDetailResponse(BaseModel):
     intensity_buckets: list[IntensityBucketResponse]
     events: list[PlayerAnalyticsEventResponse]
     analysis_quality: AnalysisQuality = Field(default_factory=AnalysisQuality)
+    goals: int | None = None
+    assists: int | None = None
 
 
 class PlayerComparisonResponse(BaseModel):
@@ -196,6 +199,8 @@ class TeamStatsResponse(BaseModel):
     woodwork: int | None = None
     passes: int | None = None
     accurate_passes: int | None = None
+    tackles: int | None = None
+    interceptions: int | None = None
     fouls: int | None = None
 
 

@@ -74,7 +74,7 @@ export function PitchCalibrationEditor({ file, disabled, onChange }: {
     <section className="mt-5 space-y-4 rounded-xl border border-border bg-subtle/40 p-4" aria-label="Pitch calibration settings">
       <div>
         <h3 className="font-semibold text-slate-950">Pitch calibration</h3>
-        <p className="mt-1 text-sm leading-6 text-slate-600">Most videos are halı saha, about 40 m by 20 m, with 3 m goals. Enter the real metres for this pitch. A full 11-a-side pitch is the exception, and only that pitch can use automatic keypoints. Relative mode keeps distance and event totals unavailable.</p>
+        <p className="mt-1 text-sm leading-6 text-slate-600">Most videos are halı saha, about 40 m by 20 m, with 3 m goals. Enter the real metres for this pitch. A full 11-a-side pitch is the exception, and only that pitch can use automatic keypoints. Passes still appear without calibration. Distance, shots and goals appear after the visible pitch is measured.</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Field htmlFor="calibration-mode" label="Measurement mode">

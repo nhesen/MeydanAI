@@ -137,6 +137,34 @@ class PitchMapper:
         return float(projected[0] / projected[2]), float(projected[1] / projected[2])
 
 
+def trusted_visible_pitch(frame: Array, config: AppConfig) -> PitchMapper | None:
+    """Use the visible grass quadrilateral as hali-saha metric calibration.
+
+    A lineup graphic, a small patch of grass, or a mask that fills the whole
+    picture is rejected. The whole picture is not the pitch: the goals sit
+    inside it, so mapping the frame border to the goal lines cannot count a goal.
+    """
+    import cv2
+
+    points = detect_visible_pitch(frame)
+    if points is None:
+        return None
+    quad = np.asarray(points, dtype=np.float32)
+    span = float(quad[:, 0].max() - quad[:, 0].min())
+    span_y = float(quad[:, 1].max() - quad[:, 1].min())
+    area = abs(float(cv2.contourArea(quad)))
+    if span < 0.85 or area < 0.45 or (span > 0.97 and span_y > 0.97):
+        return None
+    height, width = frame.shape[:2]
+    try:
+        mapper = PitchMapper.from_points(points, config, width, height)
+    except ValueError:
+        return None
+    mapper.calibration_source = "visible-pitch"
+    mapper.support_polygon = (quad * np.array([width, height], dtype=np.float32)).reshape(-1, 1, 2)
+    return mapper
+
+
 def detect_visible_pitch(frame: Array) -> list[tuple[float, float]] | None:
     import cv2
 

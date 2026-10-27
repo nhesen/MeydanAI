@@ -89,14 +89,17 @@ export function AnalyticsExperience() {
     return () => controller.abort();
   }, [attempt, requestKey, searchParams]);
 
-  const hasRankings = data
+  const boards = data
     ? [
-        data.rating_leaders,
-        data.distance_leaders,
-        data.speed_leaders,
-        data.sprint_leaders,
-      ].some((items) => items.length > 0)
-    : false;
+        { title: "Pass leaders", entries: data.pass_leaders ?? [], format: (value: number) => formatCount(value), icon: BarChart3 },
+        { title: "Tackle leaders", entries: data.tackle_leaders ?? [], format: (value: number) => formatCount(value), icon: Zap },
+        { title: "Interception leaders", entries: data.interception_leaders ?? [], format: (value: number) => formatCount(value), icon: Gauge },
+        { title: "Rating leaders", entries: data.rating_leaders, format: formatRating, icon: Medal },
+        { title: "Distance leaders", entries: data.distance_leaders, format: formatDistance, icon: Route },
+        { title: "Speed leaders", entries: data.speed_leaders, format: formatSpeed, icon: Gauge },
+        { title: "Sprint leaders", entries: data.sprint_leaders, format: (value: number) => formatCount(value), icon: Zap },
+      ].filter((board) => board.entries.length > 0)
+    : [];
 
   return (
     <PageContainer className="max-w-7xl">
@@ -182,7 +185,7 @@ export function AnalyticsExperience() {
         </div>
       ) : !data ? (
         <AnalyticsSkeleton />
-      ) : !hasRankings && data.team_analytics.length === 0 ? (
+      ) : boards.length === 0 && data.team_analytics.length === 0 ? (
         <Card className="mt-6" padding="none">
           <EmptyState
             description="Rankings appear only after real player analytics have been persisted."
@@ -193,30 +196,15 @@ export function AnalyticsExperience() {
       ) : (
         <>
           <div className="mt-8 grid gap-5 md:grid-cols-2">
-            <Leaderboard
-              entries={data.rating_leaders}
-              format={formatRating}
-              icon={Medal}
-              title="Rating leaders"
-            />
-            <Leaderboard
-              entries={data.distance_leaders}
-              format={formatDistance}
-              icon={Route}
-              title="Distance leaders"
-            />
-            <Leaderboard
-              entries={data.speed_leaders}
-              format={formatSpeed}
-              icon={Gauge}
-              title="Speed leaders"
-            />
-            <Leaderboard
-              entries={data.sprint_leaders}
-              format={(value) => formatCount(value)}
-              icon={Zap}
-              title="Sprint leaders"
-            />
+            {boards.map((board) => (
+              <Leaderboard
+                entries={board.entries}
+                format={board.format}
+                icon={board.icon}
+                key={board.title}
+                title={board.title}
+              />
+            ))}
           </div>
           <section className="mt-8" aria-labelledby="team-analytics">
             <SectionHeader
@@ -317,22 +305,30 @@ function TeamAnalyticsCard({ team }: { team: TeamAnalyticsSummary }) {
         </span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <TeamMetric
-          label="Total distance"
-          value={formatDistance(team.total_distance_m)}
-        />
-        <TeamMetric
-          label="Average speed"
-          value={formatSpeed(team.average_speed_kmh)}
-        />
-        <TeamMetric
-          label="Maximum speed"
-          value={formatSpeed(team.maximum_speed_kmh)}
-        />
-        <TeamMetric
-          label="Sprints"
-          value={formatCount(team.sprint_count)}
-        />
+        {team.passes != null ? (
+          <TeamMetric
+            label="Passes"
+            value={`${team.accurate_passes ?? 0}/${team.passes}`}
+          />
+        ) : null}
+        {team.tackles != null ? (
+          <TeamMetric label="Tackles" value={formatCount(team.tackles)} />
+        ) : null}
+        {team.interceptions != null ? (
+          <TeamMetric label="Interceptions" value={formatCount(team.interceptions)} />
+        ) : null}
+        {team.total_distance_m != null ? (
+          <TeamMetric label="Total distance" value={formatDistance(team.total_distance_m)} />
+        ) : null}
+        {team.average_speed_kmh != null ? (
+          <TeamMetric label="Average speed" value={formatSpeed(team.average_speed_kmh)} />
+        ) : null}
+        {team.maximum_speed_kmh != null ? (
+          <TeamMetric label="Maximum speed" value={formatSpeed(team.maximum_speed_kmh)} />
+        ) : null}
+        {team.sprint_count != null ? (
+          <TeamMetric label="Sprints" value={formatCount(team.sprint_count)} />
+        ) : null}
       </div>
     </Card>
   );

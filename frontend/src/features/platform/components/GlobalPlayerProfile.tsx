@@ -11,6 +11,8 @@ import { PageContainer } from "@/components/layout/PageContainer";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { PlayerHeatmap } from "@/features/matches/components/PlayerHeatmap";
+import { PlatformHighlightCard } from "@/features/platform/components/PlatformHighlightCard";
 import {
   formatDistance,
   formatRating,
@@ -124,18 +126,27 @@ export function GlobalPlayerProfile({ playerId }: { playerId: string }) {
                   </Badge>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-subtle p-3">
-                  <Metric
-                    label="Distance"
-                    value={formatDistance(performance.distance_m)}
-                  />
-                  <Metric
-                    label="Max speed"
-                    value={formatSpeed(performance.max_speed_kmh)}
-                  />
-                  <Metric
-                    label="Sprints"
-                    value={performance.sprint_count?.toString() ?? "N/A"}
-                  />
+                  {performance.distance_m == null && performance.max_speed_kmh == null ? (
+                    performance.goals != null || performance.assists != null ? (
+                      <>
+                        <Metric label="Goals" value={String(performance.goals ?? 0)} />
+                        <Metric label="Assists" value={String(performance.assists ?? 0)} />
+                        <Metric label="Passes" value={performance.passes ? `${performance.accurate_passes ?? 0}/${performance.passes}` : "—"} />
+                      </>
+                    ) : (
+                    <>
+                      <Metric label="Passes" value={`${performance.accurate_passes ?? 0}/${performance.passes ?? 0}`} />
+                      <Metric label="Tackles" value={String(performance.tackles ?? 0)} />
+                      <Metric label="Interceptions" value={String(performance.interceptions ?? 0)} />
+                    </>
+                    )
+                  ) : (
+                    <>
+                      <Metric label="Distance" value={formatDistance(performance.distance_m)} />
+                      <Metric label="Max speed" value={formatSpeed(performance.max_speed_kmh)} />
+                      <Metric label="Sprints" value={performance.sprint_count?.toString() ?? "N/A"} />
+                    </>
+                  )}
                 </div>
               </Link>
             ))}
@@ -146,6 +157,44 @@ export function GlobalPlayerProfile({ playerId }: { playerId: string }) {
               description="No real match analytics are available for this player."
               icon={BarChart3}
               title="No performance history"
+            />
+          </Card>
+        )}
+      </section>
+
+      <section className="mt-6" aria-labelledby="player-heatmap">
+        <h2 className="type-section-title text-slate-950" id="player-heatmap">
+          Position heatmap
+        </h2>
+        <p className="mb-4 mt-1 text-sm text-slate-500">
+          This video&apos;s tracks are not tied to this name. The map stays empty
+          instead of borrowing another person&apos;s movement.
+        </p>
+        <Card>
+          <PlayerHeatmap
+            emptyLabel="No personal positions yet. A large readable mark on the shirt ties the next match to this player."
+            samples={[]}
+          />
+        </Card>
+      </section>
+
+      <section className="mt-6" aria-labelledby="player-clips">
+        <h2 className="type-section-title text-slate-950" id="player-clips">
+          Goals and assists
+        </h2>
+        {profile.highlights?.length ? (
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {profile.highlights.map((highlight) => (
+              <PlatformHighlightCard highlight={highlight} key={highlight.id} />
+            ))}
+          </div>
+        ) : (
+          <Card className="mt-4" padding="none">
+            <EmptyState
+              compact
+              description="No goal or assist caption in this match names this player."
+              icon={BarChart3}
+              title="No scoring clips"
             />
           </Card>
         )}

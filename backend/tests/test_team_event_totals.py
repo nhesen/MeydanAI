@@ -16,6 +16,8 @@ def test_team_totals_count_each_shot_once_and_leave_fouls_unknown() -> None:
             SimpleNamespace(event_type="big_chance", title="Possible big chance · xG 0.42"),
             SimpleNamespace(event_type="successful_pass", title="Possible successful pass"),
             SimpleNamespace(event_type="failed_pass", title="Possible failed pass"),
+            SimpleNamespace(event_type="tackle", title="Possible tackle"),
+            SimpleNamespace(event_type="interception", title="Possible interception"),
             SimpleNamespace(event_type="corner", title="Possible corner"),
             SimpleNamespace(event_type="save", title="Possible save"),
             SimpleNamespace(event_type="goal_kick", title="Possible goal kick"),
@@ -30,6 +32,8 @@ def test_team_totals_count_each_shot_once_and_leave_fouls_unknown() -> None:
     assert measured[0].big_chances == 1
     assert measured[0].passes == 2
     assert measured[0].accurate_passes == 1
+    assert measured[0].tackles == 1
+    assert measured[0].interceptions == 1
     assert measured[0].corners == 1
     assert measured[0].saves == 1
     assert measured[0].goal_kicks == 1
@@ -39,5 +43,10 @@ def test_team_totals_count_each_shot_once_and_leave_fouls_unknown() -> None:
     unknown = [TeamStatsResponse(team_id=team_id)]
     apply_event_totals(unknown, [player], {player.id: analytics}, False)
     assert unknown[0].shots is None
+    assert unknown[0].goals is None
     assert unknown[0].xg is None
+    assert unknown[0].passes == 2
+    assert unknown[0].accurate_passes == 1
+    assert unknown[0].tackles == 1
+    assert unknown[0].interceptions == 1
     assert unknown[0].fouls is None
